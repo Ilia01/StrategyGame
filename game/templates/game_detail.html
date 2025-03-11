@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}
+  {{ game.name }} - Turn-Based Strategy Game
+{% endblock title %}
+{% block content %}
+  <div class="container mx-auto px-4 py-8">
+    <!-- Sticky Header with Gradient & Blur -->
+    <header class="sticky top-0 z-50 bg-white dark:bg-gray-900 bg-opacity-95 backdrop-blur-md shadow-xl transition-colors duration-300 rounded-lg p-4 mb-6">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <div class="flex flex-wrap items-center space-x-6 text-sm">
+          <span class="font-semibold text-gray-800 dark:text-gray-100">
+            Turn: <span id="current-turn">{{ game.current_turn }}</span>
+          </span>
+          <span class="font-semibold text-gray-800 dark:text-gray-100">
+            Current Player: <span id="current-player">{{ game.current_player.username|default:"None" }}</span>
+          </span>
+          {% if player %}
+            <span class="font-semibold text-gray-800 dark:text-gray-100">
+              Resources: <span id="player-resources">{{ player.resources }}</span>
+            </span>
+          {% endif %}
+        </div>
+        <div class="flex items-center space-x-4 mt-3 md:mt-0">
+          <span id="connection-status"
+                class="flex items-center space-x-1 text-red-600 dark:text-red-400 text-sm">
+            <i class="fas fa-plug"></i>
+            <span>Disconnected</span>
+          </span>
+          <button id="leave-game-btn"
+                  class="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg shadow-md transition duration-200"
+                  onclick="window.location.href='{% url 'home' %}'">Leave Game</button>
+        </div>
+      </div>
+    </header>
+    <!-- Main Content -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <!-- Game Board & Actions -->
+      <section class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-4">{{ game.name }}</h1>
+        <!-- Game Board Container -->
+        <div id="game-board"
+             class="grid gap-1 mb-6"
+             style="grid-template-columns: repeat({{ game.map_size }}, 40px);
+                    grid-template-rows: repeat({{ game.map_size }}, 40px)">
+          <!-- Cells rendered dynamically by JavaScript -->
+        </div>
+        <!-- Action Panel -->
+        <div class="space-y-4">
+          <div id="action-info"
+               class="hidden p-4 bg-blue-100 dark:bg-blue-900 rounded-lg transition-all"></div>
+          <div class="flex space-x-4">
+            <button id="cancel-action-btn"
+                    class="hidden px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg transition-all">
+              Cancel Action
+            </button>
+            <button id="end-turn-btn"
+                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-all"
+                    disabled>End Turn</button>
+          </div>
+        </div>
+      </section>
+      <!-- Sidebar: Chat & Players -->
+      <aside class="space-y-8">
+        <!-- Chat Panel -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 transition-colors duration-300">
+          <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Chat</h3>
+          <div id="chat-container"
+               class="h-64 overflow-y-auto mb-4 space-y-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <!-- Chat messages will appear as bubbles -->
+          </div>
+          <div class="flex">
+            <input type="text"
+                   id="chat-input"
+                   class="flex-grow p-2 border border-gray-300 dark:border-gray-600 rounded-l focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-gray-100"
+                   placeholder="Type a message..." />
+            <button id="send-chat-btn"
+                    class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-r transition-all">Send</button>
+          </div>
+        </div>
+        <!-- Players List -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 transition-colors duration-300">
+          <h3 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Players</h3>
+          <ul id="player-list" class="space-y-2">
+            <!-- Player items will be rendered here -->
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+{% endblock content %}
+{% block extra_js %}
+  <script type="module">
+  import { GameUI } from "{% static 'js/components/GameUI.js' %}";
+  document.addEventListener("DOMContentLoaded", () => {
+    const gameId = "{{ game.id }}";
+    const playerId = "{{ player.id|default:'' }}";
+    if (gameId && playerId) {
+      new GameUI(gameId, parseInt(playerId), false);
+    }
+  });
+  </script>
+{% endblock extra_js %}

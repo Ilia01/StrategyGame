@@ -1,0 +1,112 @@
+{% load static tailwind_tags %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>
+      {% block title %}
+        Django Tailwind
+      {% endblock title %}
+    </title>
+    <meta name="description" content="A brief summary of your webpage content">
+    {% tailwind_css %}
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+          integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg=="
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer" />
+    {% block extra_css %}
+    {% endblock extra_css %}
+  </head>
+  <body class="bg-gray-100 transition-colors duration-300">
+    <header class="flex items-center justify-between bg-gradient-to-r dark:from-gray-700 dark:to-gray-900 p-3">
+      <div class="flex items-center flex-shrink-0 text-white mr-6">
+        <a href="{% url 'login' %}"
+           class="font-semibold text-xl tracking-tight text-black dark:text-white">Django Tailwind</a>
+      </div>
+      <div class="flex items-center">
+        <!-- Theme Toggle -->
+        <label for="theme-toggle"
+               class="relative inline-block w-12 h-6 cursor-pointer">
+          <input type="checkbox" id="theme-toggle" class="sr-only" onclick="">
+          <div class="w-full h-full bg-gray-200 dark:bg-gray-600 rounded-full"></div>
+          <div id="toggle-switch"
+               class="absolute top-0 left-0 w-6 h-6 bg-white dark:bg-gray-700 rounded-full flex items-center justify-center transition-transform duration-300">
+            <i id="toggle-icon"
+               class="fa-solid fa-sun text-lg text-gray-800 transition-all duration-300"></i>
+          </div>
+        </label>
+        {% if user.is_authenticated %}
+          <!-- Profile Dropdown -->
+          <div class="relative ml-4">
+            <button id="profile-menu-button" class="flex items-center focus:outline-none">
+              <div class="rounded-full p-1 bg-white dark:bg-gray-700 shadow hover:shadow-lg transition-all duration-200">
+                <i class="fa-solid fa-user-circle fa-2x text-gray-800 dark:text-gray-100"></i>
+              </div>
+            </button>
+            <div id="profile-dropdown"
+                 class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-2 hidden">
+              <form action="{% url 'logout' %}" method="post" class="w-full">
+                {% csrf_token %}
+                <button type="submit"
+                        class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
+                  Logout
+                </button>
+              </form>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </header>
+    <main class="container p-4">
+      {% block content %}
+      {% endblock content %}
+    </main>
+    <script>
+      // Theme toggle functionality
+      const toggleSwitch = document.getElementById('toggle-switch');
+      const toggleIcon = document.getElementById('toggle-icon');
+
+      function updateTheme(isDark) {
+        document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+        document.body.classList.toggle('dark', isDark);
+        toggleSwitch.classList.toggle('translate-x-6', isDark);
+        toggleIcon.classList.toggle('fa-sun', !isDark);
+        toggleIcon.classList.toggle('fa-moon', isDark);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        const isDark = localStorage.getItem('theme') === 'dark';
+        updateTheme(isDark);
+        const toggleCheckbox = document.getElementById('theme-toggle');
+        toggleCheckbox.checked = isDark;
+        toggleCheckbox.addEventListener('change', () => {
+          updateTheme(toggleCheckbox.checked);
+          localStorage.setItem('theme', toggleCheckbox.checked ? 'dark' : 'light');
+        });
+      });
+
+      // Profile dropdown functionality
+      const profileButton = document.getElementById('profile-menu-button');
+      const profileDropdown = document.getElementById('profile-dropdown');
+
+      if (profileButton) {
+        profileButton.addEventListener('click', function(e) {
+          e.stopPropagation();
+          profileDropdown.classList.toggle('hidden');
+        });
+      }
+
+      // Hide profile dropdown when clicking outside
+      document.addEventListener('click', function() {
+        if (profileDropdown && !profileDropdown.classList.contains('hidden')) {
+          profileDropdown.classList.add('hidden');
+        }
+      });
+    </script>
+    {% block extra_js %}
+    {% endblock extra_js %}
+  </body>
+</html>
