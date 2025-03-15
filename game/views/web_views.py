@@ -5,11 +5,12 @@ from game.models import Game, Player
 def home(request):
     """Main page view showing active games."""
     active_games = Game.objects.filter(is_active=True)
-    return render(request, "home.html", {"active_games": active_games})
+    context = {"active_games": active_games}
+    return render(request, "home.html", context)
 
 @login_required
 def game_detail(request, game_id):
-    """Display a specific game."""
+    """View for a specific game."""
     game = get_object_or_404(Game, pk=game_id)
     try:
         player = Player.objects.get(user=request.user, game=game)
