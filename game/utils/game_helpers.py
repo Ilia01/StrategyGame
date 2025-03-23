@@ -1,27 +1,39 @@
 import random
 from django.utils import timezone
-from game.models import Game, Player, Unit, Building, Turn
+from game.core.models import Game, Player, Unit, Building, Turn
+from game.core.constants import TERRAIN_TYPES
 
 def generate_map(size):
     """Generate a random map with various terrain types."""
-    terrain_types = ["plains", "forest", "mountain", "water"]
+    terrain_types = list(TERRAIN_TYPES.values())
+    weights = [t['spawn_weight'] for t in terrain_types]
     map_data = {"size": size, "terrain": []}
+    
     for y in range(size):
         row = []
         for x in range(size):
-            weights = [0.6, 0.2, 0.1, 0.1]
-            terrain = random.choices(terrain_types, weights=weights)[0]
+            terrain = random.choices(
+                [t['name'] for t in terrain_types], 
+                weights=weights
+            )[0]
             row.append(terrain)
         map_data["terrain"].append(row)
     return map_data
 
+def getTerrainMovementCost(terrain):
+    """Get movement cost for a terrain type."""
+    for terrain_data in TERRAIN_TYPES.values():
+        if terrain_data['name'] == terrain:
+            return terrain_data['movement_cost']
+    return 1
+
 def get_starting_position(map_data, player_number, map_size):
     """Determine starting position based on player number."""
     positions = [
-        {"x": 1, "y": 1},               # Player 1: top-left
-        {"x": map_size - 2, "y": map_size - 2},  # Player 2: bottom-right
-        {"x": 1, "y": map_size - 2},     # Player 3: bottom-left
-        {"x": map_size - 2, "y": 1},     # Player 4: top-right
+        {"x": 1, "y": 1},
+        {"x": map_size - 2, "y": map_size - 2},  
+        {"x": 1, "y": map_size - 2},     
+        {"x": map_size - 2, "y": 1},     
     ]
     idx = min(player_number - 1, len(positions) - 1)
     position = positions[idx]
@@ -102,7 +114,7 @@ def calculate_visibility_map(game, player):
     entities = list(Unit.objects.filter(player=player))
     entities.extend(Building.objects.filter(player=player))
     for entity in entities:
-        x, y = entity.x_position, entity.y_position
+        x, y = entity.x_position, y_position
         for dx in range(-visibility_range, visibility_range + 1):
             for dy in range(-visibility_range, visibility_range + 1):
                 if abs(dx) + abs(dy) <= visibility_range:

@@ -1,19 +1,24 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
-from .models import Game
+from .core.constants import MAP_SIZE_CHOICES, MAX_PLAYERS_CHOICES
 
-
-class GameCreationForm(forms.ModelForm):
+class GameCreationForm(forms.Form):
     """Form for creating a new game"""
-
-    class Meta:
-        model = Game
-        fields = ["name", "map_size", "max_players"]
-        widgets = {
-            "name": forms.TextInput(
-                attrs={"class": "form-control", "placeholder": "Enter game name"}
-            ),
-            "map_size": forms.Select(attrs={"class": "form-select"}),
-            "max_players": forms.Select(attrs={"class": "form-select"}),
-        }
+    name = forms.CharField(
+        max_length=100,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Enter game name',
+            'class': 'w-full p-2 border border-gray-300 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500'
+        })
+    )
+    map_size = forms.ChoiceField(
+        choices=MAP_SIZE_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'w-full bg-white dark:bg-gray-700 border border-gray-300 text-gray-700 dark:text-white py-2 px-3 rounded leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500'
+        })
+    )
+    max_players = forms.ChoiceField(
+        choices=MAX_PLAYERS_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'w-full bg-white dark:bg-gray-700 border border-gray-300 text-gray-700 dark:text-white py-2 px-3 rounded leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500'
+        })
+    )

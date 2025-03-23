@@ -5,10 +5,21 @@
 
 // Terrain colors
 export const TERRAIN_COLORS = {
-  plains: "#a0d6a0",
-  forest: "#2d862d",
-  mountain: "#8c8c8c",
-  water: "#4da6ff",
+    'plains': '#90EE90',  // Light green
+    'forest': '#228B22',  // Forest green
+    'mountain': '#808080', // Gray
+    'water': '#4169E1'    // Royal blue
+};
+
+export const ENTITY_ICONS = {
+    'base': '🏰',
+    'barracks': '🏛️',
+    'farm': '🌾',
+    'mine': '⛏️',
+    'infantry': '👤',
+    'archer': '🏹',
+    'cavalry': '🐎',
+    'siege': '⚔️'
 };
 
 // Unit costs

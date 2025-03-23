@@ -7,7 +7,7 @@ from .forms import UserRegistrationForm, UserLoginForm
 class RegisterView(FormView):
     template_name = "register.html"
     form_class = UserRegistrationForm
-    success_url = reverse_lazy("game.home")
+    success_url = reverse_lazy("game:home")
 
     def form_valid(self, form):
         user = form.save()
@@ -16,7 +16,7 @@ class RegisterView(FormView):
 
 class CustomLoginView(LoginView):
     template_name = "login.html"
-    success_url = reverse_lazy("game.home")
+    success_url = reverse_lazy("game:home")
     redirect_authenticated_user = True
     authentication_form = UserLoginForm
 

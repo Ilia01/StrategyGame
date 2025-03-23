@@ -1,0 +1,64 @@
+.board-cell {
+    width: 50px;
+    height: 50px;
+    border: 1px solid #333;
+    position: relative;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.board-cell:hover {
+    filter: brightness(1.1);
+}
+
+.entity {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.health-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background-color: #4CAF50;
+}
+
+.valid-move {
+    background-color: rgba(76, 175, 80, 0.3) !important;
+}
+
+.valid-attack {
+    background-color: rgba(244, 67, 54, 0.3) !important;
+}
+
+.selected {
+    outline: 2px solid #2196F3;
+}
+
+.fog-of-war {
+    filter: brightness(0.5) grayscale(0.5);
+}
+
+.game-btn {
+    @apply px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors;
+}
+
+.build-option {
+    @apply px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded transition-colors;
+}
+
+.player-item {
+    @apply p-2 rounded;
+}
+
+.player-item.active {
+    @apply bg-blue-100 dark:bg-blue-900;
+}

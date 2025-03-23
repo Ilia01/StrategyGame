@@ -1,9 +1,15 @@
+from game.core.constants import BUILDING_TYPES, UNIT_TYPES
+
 def get_building_cost(building_type):
     """Return the resource cost for a building."""
-    costs = {"barracks": 50, "farm": 30, "mine": 40}
-    return costs.get(building_type, 0)
+    for building_data in BUILDING_TYPES.values():
+        if building_data['name'] == building_type:
+            return building_data['cost']
+    return 0
 
 def get_unit_cost(unit_type):
     """Return the resource cost for a unit."""
-    costs = {"infantry": 20, "archer": 30, "cavalry": 40, "siege": 60}
-    return costs.get(unit_type, 0)
+    for unit_data in UNIT_TYPES.values():
+        if unit_data['name'] == unit_type:
+            return unit_data['cost']
+    return 0

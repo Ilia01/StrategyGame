@@ -41,14 +41,15 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "game",
+    "authentication",
+    "game.apps.GameConfig", 
     "channels",
     "channels_redis",
     "tailwind",
     "theme",
     "django_browser_reload",
-    "authentication",
     'widget_tweaks',
+    'rest_framework',
 ]
 
 TAILWIND_APP_NAME = "theme"
@@ -63,6 +64,7 @@ MIDDLEWARE = [
     "django_browser_reload.middleware.BrowserReloadMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "game.middleware.GameErrorMiddleware",
 ]
 
 INTERNAL_IPS = [
@@ -76,7 +78,9 @@ NPM_BIN_PATH = "npm.cmd"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [
+            BASE_DIR / "templates",  # Add root templates directory
+        ],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -157,4 +161,6 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOGIN_REDIRECT_URL = "home"
+LOGIN_URL = 'authentication:login'
+LOGIN_REDIRECT_URL = 'game:home'
+LOGOUT_REDIRECT_URL = 'authentication:login'
