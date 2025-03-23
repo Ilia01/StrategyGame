@@ -78,9 +78,7 @@ NPM_BIN_PATH = "npm.cmd"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [
-            BASE_DIR / "templates",  # Add root templates directory
-        ],
+        "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -161,6 +159,4 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-LOGIN_URL = 'authentication:login'
-LOGIN_REDIRECT_URL = 'game:home'
-LOGOUT_REDIRECT_URL = 'authentication:login'
+LOGIN_REDIRECT_URL = "home"
