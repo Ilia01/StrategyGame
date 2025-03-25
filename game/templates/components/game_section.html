@@ -1,0 +1,10 @@
+<section>
+  <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">{{ section_title }}</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+    {% for game in games %}
+    {% include "game/includes/game_card.html" with game=game is_my_game=is_my_games show_turn=show_turn %}
+    {% empty %}
+    <p class="text-gray-600 dark:text-gray-400">No {{ section_title|lower }} available.</p>
+    {% endfor %}
+  </div>
+</section>

@@ -1,160 +1,47 @@
 {% extends "base.html" %}
 {% load widget_tweaks %}
-{% block title %}
-  Home - Turn-Based Strategy Game
-{% endblock title %}
+
+{% block title %}Home - Turn-Based Strategy Game{% endblock %}
+
 {% block content %}
-  <div class="container mx-auto px-4 py-8">
-    <!-- Hero Section with Gradient & Backdrop Blur -->
-    <section class="mb-12 relative">
-      <div class="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600 opacity-30 rounded-lg backdrop-blur-sm"></div>
-      <div class="relative text-center">
-        <h1 class="text-4xl md:text-5xl font-extrabold mb-4 text-gray-900 dark:text-white drop-shadow-lg">
-          Turn-Based Strategy Game
-        </h1>
-        <p class="text-lg md:text-xl text-gray-700 dark:text-gray-300 mb-8">
-          Build your empire, train your units, and conquer your opponents in our immersive strategy world.
-        </p>
-      </div>
-    </section>
-    <!-- Main Content: Create Game and Active Games -->
-    <div class="flex flex-col md:flex-row gap-8">
-      <!-- Left Column: Game Creation and Active Games -->
-      <div class="w-full md:w-2/3 space-y-8">
-        {% if user.is_authenticated %}
-          <div class="bg-white dark:bg-gray-800 p-6 md:p-8 rounded-lg shadow-lg transition-colors duration-200">
-            <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Create New Game</h2>
-            <form id="create-game-form" class="space-y-4" method="post" action="{% url 'home' %}">
-              {% csrf_token %}
-              <div>
-                <label for="{{ form.name.id_for_label }}"
-                       class="block text-lg font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Game Name
-                </label>
-                {% render_field form.name %}
-              </div>
-              <div>
-                <label for="{{ form.map_size.id_for_label }}"
-                       class="block text-lg font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Map Size
-                </label>
-                {% render_field form.map_size %}
-              </div>
-              <div>
-                <label for="{{ form.max_players.id_for_label }}"
-                       class="block text-lg font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Max Players
-                </label>
-                {% render_field form.max_players %}
-              </div>
-              <button type="submit"
-                      class="w-full bg-blue-500 hover:bg-blue-600 transition-colors duration-200 text-white font-bold py-2 px-4 rounded-lg">
-                Create Game
-              </button>
-            </form>
-          </div>
-        {% else %}
-          <div class="bg-white dark:bg-gray-800 p-6 md:p-8 rounded-lg shadow-lg">
-            <p class="text-lg text-gray-700 dark:text-gray-300">
-              Please <a href="{% url 'login' %}" class="text-blue-500 hover:underline">login</a> to create or join games.
-            </p>
-          </div>
+<div class="container mx-auto px-4 py-8">
+  {% include "game/components/hero.html" with
+  title="Turn-Based Strategy Game"
+  subtitle="Build your empire, train your units, and conquer your opponents in our immersive strategy world." %}
+
+  <div class="flex flex-col md:flex-row gap-8">
+    <!-- Left Column: Game Creation and Active Games -->
+    <div class="w-full md:w-2/3 space-y-8">
+      {% if user.is_authenticated %}
+      {% include "components/game_form.html" with
+      form_title="Create New Game"
+      form_action=create_game_url
+      submit_text="Create Game" %}
+      {% endif %}
+
+      <!-- Games Sections -->
+      <div id="games-container" class="space-y-8">
+        {% if my_games %}
+        {% include "components/game_section.html" with
+        section_title="My Games"
+        games=my_games
+        is_my_games=True
+        show_turn=True %}
         {% endif %}
-        <section>
-          <h2 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Active Games</h2>
-          {% if active_games %}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {% for game in active_games %}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg transition-colors duration-200 flex flex-col justify-between">
-                  <div>
-                    <h3 class="text-xl font-semibold mb-2 text-gray-800 dark:text-white">{{ game.name }}</h3>
-                    <p class="text-sm mb-4 text-gray-600 dark:text-gray-300">
-                      Players: {{ game.players.count }}/{{ game.max_players }}<br />
-                      Map Size: {{ game.map_size }}x{{ game.map_size }}<br />
-                      Current Turn: {{ game.current_turn }}
-                    </p>
-                  </div>
-                  <div class="space-y-2">
-                    <a href="{% url 'game_detail' game.id %}"
-                       class="block bg-blue-500 hover:bg-blue-600 transition-colors duration-200 text-white text-center font-bold py-2 px-4 rounded-lg">
-                      View Game
-                    </a>
-                    {% if user.is_authenticated and game.players.count < game.max_players %}
-                      <form method="post" action="{% url 'api_join_game' game.id %}">
-                        {% csrf_token %}
-                        <button type="submit"
-                                class="w-full bg-green-500 hover:bg-green-600 transition-colors duration-200 text-white font-bold py-2 px-4 rounded-lg">
-                          Join Game
-                        </button>
-                      </form>
-                    {% endif %}
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          {% else %}
-            <p class="text-lg text-gray-700 dark:text-gray-300">
-              No active games available. Create a new game to get started!
-            </p>
-          {% endif %}
-        </section>
+
+        {% include "components/game_section.html" with
+        section_title="Available Games"
+        games=active_games|exclude:my_games
+        is_my_games=False
+        show_turn=False %}
       </div>
-      <!-- Right Column: Game Rules -->
-      <aside class="w-full md:w-1/3">
-        <div class="bg-white dark:bg-gray-800 p-6 md:p-8 rounded-lg shadow-lg transition-colors duration-200">
-          <h3 class="text-2xl font-bold mb-4 text-gray-800 dark:text-white">Game Rules</h3>
-          <div class="space-y-4">
-            <div>
-              <h5 class="text-lg font-bold mb-2 text-gray-700 dark:text-gray-300">Objective</h5>
-              <p class="text-sm text-gray-600 dark:text-gray-300">
-                Defeat all enemy units and buildings to win the game.
-              </p>
-            </div>
-            <div>
-              <h5 class="text-lg font-bold mb-2 text-gray-700 dark:text-gray-300">Units</h5>
-              <ul class="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
-                <li><strong>Infantry:</strong> Basic unit with balanced stats.</li>
-                <li><strong>Archer:</strong> Ranged unit with high attack range.</li>
-                <li><strong>Cavalry:</strong> Fast unit with high movement range.</li>
-                <li><strong>Siege:</strong> Powerful unit that excels against buildings.</li>
-              </ul>
-            </div>
-            <div>
-              <h5 class="text-lg font-bold mb-2 text-gray-700 dark:text-gray-300">Buildings</h5>
-              <ul class="list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
-                <li><strong>Base:</strong> Your main building. If destroyed, you lose.</li>
-                <li><strong>Barracks:</strong> Allows training new units.</li>
-                <li><strong>Farm:</strong> Generates extra resources each turn.</li>
-                <li><strong>Mine:</strong> Generates more resources than farms.</li>
-              </ul>
-            </div>
-            <div>
-              <h5 class="text-lg font-bold mb-2 text-gray-700 dark:text-gray-300">Resources</h5>
-              <p class="text-sm text-gray-600 dark:text-gray-300">
-                Resources are used to build structures and train units. Gain resources each turn based on your buildings.
-              </p>
-            </div>
-          </div>
-        </div>
-      </aside>
     </div>
+
+    {% include "components/rules_sidebar.html" with rule_sections=game_rules %}
   </div>
-{% endblock content %}
+</div>
+{% endblock %}
+
 {% block extra_js %}
-  <script>
-    function getCookie(name) {
-      let cookieValue = null;
-      if (document.cookie && document.cookie !== "") {
-        const cookies = document.cookie.split(";");
-        for (let i = 0; i < cookies.length; i++) {
-          const cookie = cookies[i].trim();
-          if (cookie.substring(0, name.length + 1) === name + "=") {
-            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-            break;
-          }
-        }
-      }
-      return cookieValue;
-    }
-  </script>
-{% endblock extra_js %}
+<script src="{% static 'js/game-updates.js' %}"></script>
+{% endblock %}

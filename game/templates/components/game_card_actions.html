@@ -1,0 +1,21 @@
+<div class="space-y-2">
+  {% if is_my_game %}
+  <a href="{% url 'game:game_detail' game.id %}"
+    class="block bg-blue-500 hover:bg-blue-600 transition-colors duration-200 text-white text-center font-bold py-2 px-4 rounded-lg">
+    Continue Game
+  </a>
+  {% elif user.is_authenticated and game.players.count < game.max_players %} <form method="post"
+    action="{% url 'game:join_game' game.id %}" class="join-game-form">
+    {% csrf_token %}
+    <button type="submit"
+      class="w-full bg-green-500 hover:bg-green-600 transition-colors duration-200 text-white font-bold py-2 px-4 rounded-lg">
+      Join Game
+    </button>
+    </form>
+    {% else %}
+    <a href="{% url 'game:game_detail' game.id %}"
+      class="block bg-blue-500 hover:bg-blue-600 transition-colors duration-200 text-white text-center font-bold py-2 px-4 rounded-lg">
+      Spectate
+    </a>
+    {% endif %}
+</div>

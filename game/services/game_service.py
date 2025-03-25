@@ -27,7 +27,6 @@ class GameService:
         game.set_map(map_data)
         game.save()
 
-        # Create first player
         GameService.add_player_to_game(user, game)
         return game
 
@@ -35,25 +34,11 @@ class GameService:
     @transaction.atomic
     def add_player_to_game(user, game):
         """Add a new player to the game"""
-        player_count = Player.objects.filter(game=game).count()
-        if player_count >= game.max_players:
-            raise ValueError("Game is full")
-            
-        if Player.objects.filter(user=user, game=game).exists():
-            raise ValueError("Already in game")
+        player = game.add_player(user)
 
-        player_number = player_count + 1
-        player = Player.objects.create(
-            user=user,
-            game=game,
-            player_number=player_number
-        )
-
-        # Setup starting position
         map_data = game.get_map()
-        starting_position = get_starting_position(map_data, player_number, game.map_size)
+        starting_position = get_starting_position(map_data, player.player_number, game.map_size)
         
-        # Create initial buildings and units
         Building.objects.create(
             player=player,
             building_type=Building.BASE,
@@ -72,6 +57,14 @@ class GameService:
 
     @staticmethod
     @transaction.atomic
+    def remove_player_from_game(user, game):
+        """Remove a player from the game"""
+        player = Player.objects.get(user=user, game=game)
+        player.deactivate()
+        return True
+
+    @staticmethod
+    @transaction.atomic
     def process_turn_actions(game, player, actions):
         """Process all actions for a player's turn"""
         for action in actions:
@@ -84,7 +77,6 @@ class GameService:
             elif action_type == "attack":
                 GameService._handle_attack_action(game, player, action)
 
-        # Create turn record
         Turn.objects.create(
             game=game,
             player=player,

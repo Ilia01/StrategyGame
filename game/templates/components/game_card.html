@@ -1,0 +1,28 @@
+<div
+  class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg transition-colors duration-200 flex flex-col justify-between"
+  data-game-id="{{ game.id }}">
+  <div>
+    <h3 class="text-xl font-semibold mb-2 text-gray-800 dark:text-white">{{ game.name }}</h3>
+    <div class="text-sm space-y-1 mb-4 text-gray-600 dark:text-gray-300">
+      <p class="flex justify-between">
+        <span>Players:</span>
+        <span class="font-medium player-count">{{ game.players.count }}/{{ game.max_players }}</span>
+      </p>
+      <p class="flex justify-between">
+        <span>Map Size:</span>
+        <span class="font-medium">{{ game.map_size }}x{{ game.map_size }}</span>
+      </p>
+      {% if show_turn %}
+      <p class="flex justify-between">
+        <span>Turn:</span>
+        <span class="font-medium" id="turn-{{ game.id }}">{{ game.current_turn }}</span>
+      </p>
+      {% endif %}
+      <p class="flex justify-between">
+        <span>Created by:</span>
+        <span class="font-medium">{{ game.created_by.username }}</span>
+      </p>
+    </div>
+  </div>
+  {% include "components/game_card_actions.html" %}
+</div>

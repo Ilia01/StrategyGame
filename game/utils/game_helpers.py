@@ -37,7 +37,7 @@ def get_starting_position(map_data, player_number, map_size):
     ]
     idx = min(player_number - 1, len(positions) - 1)
     position = positions[idx]
-    map_data["terrain"][position["y"]][position["x"]] = "plains"
+    map_data.terrain[position["y"]][position["x"]] = "plains"
     return position
 
 def is_player_turn(game, player):

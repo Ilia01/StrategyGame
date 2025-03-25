@@ -37,7 +37,7 @@ class Game(models.Model):
         try:
             return json.loads(self.map_data)
         except:
-            return {}
+            return dict
 
     def set_map(self, map_data):
         self.map_data = json.dumps(map_data)
@@ -52,6 +52,53 @@ class Game(models.Model):
         current_player_number = (self.current_turn - 1) % self.max_players + 1
         return self.players.filter(player_number=current_player_number).first()
 
+    def get_next_player_number(self):
+        """Get the next available player number"""
+        used_numbers = set(self.players.values_list('player_number', flat=True))
+        for num in range(1, self.max_players + 1):
+            if num not in used_numbers:
+                return num
+        return None
+
+    def is_full(self):
+        """Check if game has maximum number of players"""
+        return self.players.filter(is_active=True).count() >= self.max_players
+
+    def get_active_player_count(self):
+        """Get number of active players"""
+        return self.players.filter(is_active=True).count()
+
+    def can_join(self, user):
+        """Check if user can join the game"""
+        if not self.is_active:
+            return False, "Game is not active"
+        if self.is_full():
+            return False, "Game is full"
+        if self.players.filter(user=user).exists():
+            return False, "Already in game"
+        return True, ""
+
+    def add_player(self, user):
+        """Add a new player to the game"""
+        can_join, message = self.can_join(user)
+        if not can_join:
+            raise ValueError(message)
+
+        next_number = self.get_next_player_number()
+        if next_number is None:
+            raise ValueError("No available player numbers")
+
+        return Player.objects.create(
+            user=user,
+            game=self,
+            player_number=next_number
+        )
+    
+    def deactivate(self):
+        """Properly deactivate a game"""
+        self.is_active = False
+        self.save()
+
 
 class Player(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -64,9 +111,24 @@ class Player(models.Model):
     class Meta:
         unique_together = [
             ["user", "game"],
-            ["game", "player_number"]  # Ensure unique player numbers per game
+            ["game", "player_number"]
         ]
         ordering = ['player_number']
+
+    def save(self, *args, **kwargs):
+        if not self.pk and not self.player_number:
+            self.player_number = self.game.get_next_player_number()
+            if self.player_number is None:
+                raise ValueError("No available player numbers")
+        super().save(*args, **kwargs)
+
+    def deactivate(self):
+        """Properly deactivate a player"""
+        self.is_active = False
+        self.save()
+
+        if self.game.get_active_player_count() == 0:
+            self.game.deactivate()
 
     def __str__(self):
         return f"{self.user.username} in {self.game.name}"
@@ -95,7 +157,6 @@ class Unit(models.Model):
         return (
             f"{self.get_unit_type_display()} at ({self.x_position}, {self.y_position})"
         )
-
 
 class Building(models.Model):
     BUILDING_CHOICES = [(data['name'], data['display']) for data in BUILDING_TYPES.values()]

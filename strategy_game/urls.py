@@ -16,10 +16,13 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.shortcuts import redirect
+from django.views.generic import RedirectView
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("auth/", include("authentication.urls")),
-    path('', include('game.urls')),
+    path('admin/', admin.site.urls),
+    path('', RedirectView.as_view(pattern_name='game:home'), name='root'),
+    path('auth/', include('authentication.urls', namespace='auth')),
+    path('', include('game.urls', namespace='game')),
     path("__reload__/", include("django_browser_reload.urls")),
 ]

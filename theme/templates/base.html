@@ -7,7 +7,7 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge" />
     <title>
       {% block title %}
-        Django Tailwind
+        Strategy Game
       {% endblock title %}
     </title>
     <meta name="description" content="A brief summary of your webpage content">
@@ -23,7 +23,7 @@
   <body class="bg-gray-100 transition-colors duration-300">
     <header class="flex items-center justify-between bg-gradient-to-r dark:from-gray-700 dark:to-gray-900 p-3">
       <div class="flex items-center flex-shrink-0 text-white mr-6">
-        <a href="{% url 'login' %}"
+        <a href="{% url 'auth:register' %}"
            class="font-semibold text-xl tracking-tight text-black dark:text-white">Django Tailwind</a>
       </div>
       <div class="flex items-center">
@@ -48,7 +48,7 @@
             </button>
             <div id="profile-dropdown"
                  class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg py-2 hidden">
-              <form action="{% url 'logout' %}" method="post" class="w-full">
+              <form action="{% url 'auth:logout' %}" method="post" class="w-full">
                 {% csrf_token %}
                 <button type="submit"
                         class="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">

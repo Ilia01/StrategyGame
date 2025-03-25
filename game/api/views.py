@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 
 from game.core.models import Game, Player
 from game.services.game_service import GameService
+from game.mixins import GameServiceMixin
 from .serializers.game import GameCreateSerializer, GameSerializer
 from .serializers.action import BuildActionSerializer, MoveActionSerializer, AttackActionSerializer
 from game.core.constants import (
@@ -17,7 +18,7 @@ from game.core.constants import (
     MAX_PLAYERS_CHOICES
 )
 
-class GameViewSet(viewsets.ModelViewSet):
+class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
     queryset = Game.objects.all()
     serializer_class = GameSerializer
     permission_classes = [IsAuthenticated]
@@ -30,7 +31,7 @@ class GameViewSet(viewsets.ModelViewSet):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            game = GameService.create_game(
+            game = self.game_service.create_game(
                 user=request.user,
                 **serializer.validated_data
             )
@@ -42,7 +43,7 @@ class GameViewSet(viewsets.ModelViewSet):
     def join(self, request, pk=None):
         game = self.get_object()
         try:
-            player = GameService.add_player_to_game(request.user, game)
+            player = self.game_service.add_player_to_game(request.user, game)
             return Response({"success": True}, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -53,7 +54,7 @@ class GameViewSet(viewsets.ModelViewSet):
         player = get_object_or_404(Player, user=request.user, game=game)
 
         try:
-            GameService.process_turn_actions(game, player, request.data.get("actions", []))
+            self.game_service.process_turn_actions(game, player, request.data.get("actions", []))
             return Response({"success": True}, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
