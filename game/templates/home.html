@@ -5,43 +5,34 @@
 
 {% block content %}
 <div class="container mx-auto px-4 py-8">
-  {% include "game/components/hero.html" with
-  title="Turn-Based Strategy Game"
-  subtitle="Build your empire, train your units, and conquer your opponents in our immersive strategy world." %}
+  {% with title="Turn-Based Strategy Game" subtitle="Build your empire, train your units, and conquer your opponents in our immersive strategy world." %}
+    {% include "components/hero.html" %}
+  {% endwith %}
 
   <div class="flex flex-col md:flex-row gap-8">
     <!-- Left Column: Game Creation and Active Games -->
     <div class="w-full md:w-2/3 space-y-8">
       {% if user.is_authenticated %}
-      {% include "components/game_form.html" with
-      form_title="Create New Game"
-      form_action=create_game_url
-      submit_text="Create Game" %}
+      {% with form_title="Create New Game" form_action=create_game_url submit_text="Create Game" %}
+        {% include "components/game_form.html" %}
+      {% endwith %}
       {% endif %}
 
       <!-- Games Sections -->
       <div id="games-container" class="space-y-8">
         {% if my_games %}
-        {% include "components/game_section.html" with
-        section_title="My Games"
-        games=my_games
-        is_my_games=True
-        show_turn=True %}
+        {% with section_title="My Games" games=my_games is_my_games=True show_turn=True %}
+          {% include "components/game_section.html" %}
+        {% endwith %}
         {% endif %}
 
-        {% include "components/game_section.html" with
-        section_title="Available Games"
-        games=active_games|exclude:my_games
-        is_my_games=False
-        show_turn=False %}
+        {% with section_title="Available Games" games=active_games is_my_games=False show_turn=False %}
+          {% include "components/game_section.html" %}
+        {% endwith %}
       </div>
     </div>
 
     {% include "components/rules_sidebar.html" with rule_sections=game_rules %}
   </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script src="{% static 'js/game-updates.js' %}"></script>
 {% endblock %}

@@ -21,8 +21,7 @@ from django.views.generic import RedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', RedirectView.as_view(pattern_name='game:home'), name='root'),
-    path('auth/', include('authentication.urls', namespace='auth')),
-    path('', include('game.urls', namespace='game')),
+    path('auth/', include('authentication.urls')),
+    path('', include('game.urls')),
     path("__reload__/", include("django_browser_reload.urls")),
 ]

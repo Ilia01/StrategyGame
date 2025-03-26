@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Prefetch
 from game.core.models import Game, Player, Unit, Building, Turn
 from game.utils.game_helpers import (
     generate_map,
@@ -8,157 +9,83 @@ from game.utils.game_helpers import (
     is_valid_build_position,
     is_valid_move,
     is_valid_attack,
-    calculate_damage,
-    advance_game_if_all_turns_complete
+    calculate_damage
 )
+from game.core.game_rules import GAME_RULES
+from .state_service import GameStateService
+from .player_service import PlayerService
+from .combat_service import CombatService
+from .action_service import ActionService
 
 class GameService:
-    @staticmethod
+    def __init__(self):
+        self.combat_service = CombatService()
+        self.action_service = ActionService(self.combat_service)
+        self.state_service = GameStateService()
+        self.player_service = PlayerService()
+
     @transaction.atomic
-    def create_game(user, name, map_size, max_players):
-        """Create a new game and initial player setup"""
+    def create_game(self, user, name, map_size, max_players):
+        """Create a new game with initial setup"""
         game = Game.objects.create(
             name=name,
             map_size=map_size,
             max_players=max_players,
-            created_by=user
+            created_by=user,
+            map_data=generate_map(map_size)
         )
-        map_data = generate_map(map_size)
-        game.set_map(map_data)
-        game.save()
-
-        GameService.add_player_to_game(user, game)
+        
+        game.add_player(user)
         return game
 
-    @staticmethod
+    def get_game_state(self, game_id, user):
+        """Get the current state of a game for a user"""
+        return self.state_service.get_game_state(game_id, user)
+
+    def get_home_page_state(self, user):
+        """Get the state for the home page"""
+        return self.state_service.get_home_page_state(user)
+
     @transaction.atomic
-    def add_player_to_game(user, game):
-        """Add a new player to the game"""
-        player = game.add_player(user)
+    def manage_player_in_game(self, user, game, action='add'):
+        """Add or remove a player from a game"""
+        if action == 'add':
+            return game.add_player(user)
+        elif action == 'remove':
+            player = game.players.get(user=user)
+            player.deactivate()
+            return True
+        raise ValueError(f"Invalid action: {action}")
 
-        map_data = game.get_map()
-        starting_position = get_starting_position(map_data, player.player_number, game.map_size)
-        
-        Building.objects.create(
-            player=player,
-            building_type=Building.BASE,
-            x_position=starting_position["x"],
-            y_position=starting_position["y"]
-        )
-        
-        Unit.objects.create(
-            player=player,
-            unit_type=Unit.INFANTRY,
-            x_position=starting_position["x"] + 1,
-            y_position=starting_position["y"]
-        )
-        
-        return player
-
-    @staticmethod
     @transaction.atomic
-    def remove_player_from_game(user, game):
-        """Remove a player from the game"""
-        player = Player.objects.get(user=user, game=game)
-        player.deactivate()
-        return True
+    def process_turn_actions(self, game, player, actions):
+        """Process a player's turn actions"""
+        if game.current_player != player:
+            raise ValueError("Not your turn")
 
-    @staticmethod
-    @transaction.atomic
-    def process_turn_actions(game, player, actions):
-        """Process all actions for a player's turn"""
-        for action in actions:
-            action_type = action.get("type")
-            
-            if action_type == "build":
-                GameService._handle_build_action(player, action)
-            elif action_type == "move_unit":
-                GameService._handle_move_action(game, player, action)
-            elif action_type == "attack":
-                GameService._handle_attack_action(game, player, action)
-
-        Turn.objects.create(
+        turn = Turn.objects.create(
             game=game,
             player=player,
-            turn_number=game.current_turn,
-            actions=actions,
-            completed=True,
-            completed_at=timezone.now()
+            turn_number=game.current_turn
         )
 
-        advance_game_if_all_turns_complete(game)
+        try:
+            result = self.action_service.process_turn_actions(game, player, actions)
+            turn.complete()
+            game.next_turn()
+            return result
+        except Exception as e:
+            turn.delete()
+            raise e
 
-    @staticmethod
-    def _handle_build_action(player, action):
-        """Handle building construction"""
-        building_type = action.get("building_type")
-        x = action.get("x")
-        y = action.get("y")
-        
-        if not is_valid_build_position(x, y, player.game):
-            raise ValueError(f"Invalid build position: {x}, {y}")
-            
-        Building.objects.create(
-            player=player,
-            building_type=building_type,
-            x_position=x,
-            y_position=y
-        )
+    def get_unit_stats(self, unit_type):
+        """Get the stats for a unit type"""
+        return self.combat_service.get_unit_stats(unit_type)
 
-    @staticmethod
-    def _handle_move_action(game, player, action):
-        """Handle unit movement"""
-        unit_id = action.get("unit_id")
-        x = action.get("x")
-        y = action.get("y")
-        
-        unit = get_object_or_404(Unit, id=unit_id, player=player)
-        if not is_valid_move(unit, x, y, game):
-            raise ValueError(f"Invalid move for unit {unit_id}")
-            
-        unit.x_position = x
-        unit.y_position = y
-        unit.has_moved = True
-        unit.save()
+    def calculate_combat_power(self, unit):
+        """Calculate the combat power of a unit"""
+        return self.combat_service.calculate_combat_power(unit)
 
-    @staticmethod
-    def _handle_attack_action(game, player, action):
-        """Handle unit attacks"""
-        unit_id = action.get("unit_id")
-        target_x = action.get("target_x")
-        target_y = action.get("target_y")
-        
-        unit = get_object_or_404(Unit, id=unit_id, player=player)
-        target = (
-            Unit.objects.filter(
-                game=game,
-                x_position=target_x,
-                y_position=target_y
-            ).exclude(player=player).first()
-        )
-        
-        if not target:
-            target = (
-                Building.objects.filter(
-                    game=game,
-                    x_position=target_x,
-                    y_position=target_y
-                ).exclude(player=player).first()
-            )
-            
-        if not target:
-            raise ValueError("No valid target found")
-            
-        if not is_valid_attack(unit, target):
-            raise ValueError("Invalid attack")
-            
-        damage = calculate_damage(unit, target)
-        target.health -= damage
-        
-        if target.health <= 0:
-            target.delete()
-        else:
-            target.save()
-            
-        unit.has_attacked = True
-        unit.save()
+    def is_in_attack_range(self, attacker, target):
+        """Check if a target is within attack range"""
+        return self.combat_service.is_in_range(attacker, target)

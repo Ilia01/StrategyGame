@@ -8,7 +8,9 @@ from .forms import UserRegistrationForm, UserLoginForm
 class RegisterView(FormView):
     template_name = "register.html"
     form_class = UserRegistrationForm
-    success_url = reverse_lazy("game:home")
+
+    def get_success_url(self):
+        return reverse_lazy("game:home")
 
     def form_valid(self, form):
         user = form.save()
@@ -19,9 +21,9 @@ class RegisterView(FormView):
 class CustomLoginView(LoginView):
     template_name = "login.html"
     authentication_form = UserLoginForm
-    
+
     def get_success_url(self):
-        return reverse_lazy('game:home')
+        return reverse_lazy("game:home")
 
     def form_valid(self, form):
         remember_me = form.cleaned_data.get('remember_me')

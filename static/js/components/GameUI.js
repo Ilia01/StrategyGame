@@ -98,10 +98,10 @@ export class GameUI {
     if (!this.gameState) return;
 
     // Update turn and current player info
-    document.getElementById("current-turn").textContent =
-      this.gameState.current_turn;
-    document.getElementById("current-player").textContent =
-      this.gameState.current_player_username || "None";
+    const currentTurn = document.getElementById("current-turn");
+    const currentPlayer = document.getElementById("current-player");
+    if (currentTurn) currentTurn.textContent = this.gameState.current_turn;
+    if (currentPlayer) currentPlayer.textContent = this.gameState.current_player_username || "None";
 
     // Update player resources if player
     if (this.playerId) {
@@ -109,8 +109,10 @@ export class GameUI {
         (p) => p.id === this.playerId
       );
       if (currentPlayer) {
-        document.getElementById("player-resources").textContent =
-          currentPlayer.resources;
+        const playerResources = document.getElementById("player-resources");
+        if (playerResources) {
+          playerResources.textContent = currentPlayer.resources;
+        }
       }
     }
 
@@ -119,10 +121,11 @@ export class GameUI {
       this.gameBoard = new GameBoard(this.gameState, this.playerId, (x, y) =>
         this.handleCellClick(x, y)
       );
+      this.gameBoard.initializeBoard();
     } else {
       this.gameBoard.gameState = this.gameState;
+      this.gameBoard.initializeBoard();
     }
-    this.gameBoard.render();
 
     // Render player list
     this.renderPlayerList();
@@ -165,107 +168,195 @@ export class GameUI {
     if (!this.playerId) return;
 
     const isMyTurn = this.gameState.current_player_id === this.playerId;
-    document.getElementById("end-turn-btn").disabled = !isMyTurn;
+    const endTurnBtn = document.getElementById("end-turn-btn");
+    if (endTurnBtn) {
+      endTurnBtn.disabled = !isMyTurn;
+    }
 
     const actionInfo = document.getElementById("action-info");
     const cancelActionBtn = document.getElementById("cancel-action-btn");
-    const buildOptions = document.getElementById("build-options");
-    const trainOptions = document.getElementById("train-options");
 
     if (this.currentAction) {
-      actionInfo.classList.remove("d-none");
-      actionInfo.textContent = `Current action: ${this.currentAction.type}`;
-      cancelActionBtn.classList.remove("d-none");
-
-      // Show/hide appropriate options
-      if (this.currentAction.type === "build") {
-        buildOptions.classList.remove("d-none");
-      } else {
-        buildOptions.classList.add("d-none");
+      if (actionInfo) {
+        actionInfo.classList.remove("d-none");
+        actionInfo.textContent = `Current action: ${this.currentAction.type}`;
+      }
+      if (cancelActionBtn) {
+        cancelActionBtn.classList.remove("d-none");
       }
     } else {
-      actionInfo.classList.add("d-none");
-      cancelActionBtn.classList.add("d-none");
-
-      if (isMyTurn) {
-        buildOptions.classList.remove("d-none");
-      } else {
-        buildOptions.classList.add("d-none");
+      if (actionInfo) {
+        actionInfo.classList.add("d-none");
       }
-      trainOptions.classList.add("d-none");
+      if (cancelActionBtn) {
+        cancelActionBtn.classList.add("d-none");
+      }
     }
   }
 
   handleCellClick(x, y) {
-    if (!this.playerId || this.gameState.current_player_id !== this.playerId)
-      return;
+    if (!this.gameState || this.gameState.current_player_id !== this.playerId) return;
 
-    if (this.currentAction) {
-      if (
-        this.currentAction.type === "build" &&
-        this.isValidBuildPosition(x, y)
-      ) {
-        this.addAction({
-          type: "build",
-          building_type: this.currentAction.building_type,
-          x: x,
-          y: y,
-        });
-        this.cancelAction();
+    const cell = this.gameState.map_data[y][x];
+    if (!cell) return;
+
+    switch (this.currentAction?.type) {
+      case "move":
+        this.handleMoveAction(x, y);
+        break;
+      case "attack":
+        this.handleAttackAction(x, y);
+        break;
+      case "build":
+        this.handleBuildAction(x, y);
+        break;
+      case "train":
+        this.handleTrainAction(x, y);
+        break;
+      default:
+        this.handleSelection(x, y);
+    }
+  }
+
+  handleSelection(x, y) {
+    const cell = this.gameState.map_data[y][x];
+    if (!cell) return;
+
+    // Update selection info
+    const selectionInfo = document.getElementById("selection-info");
+    if (selectionInfo) {
+      if (cell.unit) {
+        selectionInfo.textContent = `Unit: ${cell.unit.type} (HP: ${cell.unit.health})`;
+      } else if (cell.building) {
+        selectionInfo.textContent = `Building: ${cell.building.type}`;
+      } else {
+        selectionInfo.textContent = `Empty cell (Resources: ${cell.resources || 0})`;
       }
-      return;
     }
 
-    // Check if there's a unit or building at clicked position
-    const cell = this.boardElement.querySelector(
-      `game-cell[data-x="${x}"][data-y="${y}"]`
-    );
-    const entity = cell?.firstElementChild;
+    // If it's our unit, show available actions
+    if (cell.unit && cell.unit.owner_id === this.playerId) {
+      this.showUnitActions(cell.unit);
+    } else {
+      this.hideUnitActions();
+    }
+  }
 
-    if (entity) {
-      const entityType = entity.dataset.type;
-      const entityId = parseInt(entity.dataset.id);
-      const playerId = parseInt(entity.dataset.playerId);
+  showUnitActions(unit) {
+    const moveBtn = document.getElementById("move-unit");
+    const attackBtn = document.getElementById("attack");
+    const buildBtn = document.getElementById("build");
+    const trainBtn = document.getElementById("train-unit");
 
-      if (playerId === this.playerId) {
-        // Select own unit/building
-        const selectedEntity = this.selectEntity(entityType, entityId);
-        if (selectedEntity) {
-          if (entityType === "unit") {
-            this.currentAction = {
-              type: "select_unit",
-              unit_id: entityId,
-            };
-          } else if (
-            entityType === "building" &&
-            selectedEntity.building_type === "barracks"
-          ) {
-            document.getElementById("train-options").classList.remove("d-none");
-            document
-              .getElementById("train-options")
-              .setAttribute("data-barracks-id", entityId);
-          }
-        }
-      } else if (this.currentAction?.type === "select_unit") {
-        // Attack enemy unit/building
-        this.addAction({
-          type: "attack",
-          unit_id: this.currentAction.unit_id,
-          target_x: x,
-          target_y: y,
-        });
-        this.cancelAction();
-      }
-    } else if (this.currentAction?.type === "select_unit") {
-      // Move unit to empty cell
-      this.addAction({
-        type: "move_unit",
-        unit_id: this.currentAction.unit_id,
+    if (moveBtn) moveBtn.disabled = unit.has_moved;
+    if (attackBtn) attackBtn.disabled = unit.has_attacked;
+    if (buildBtn) buildBtn.disabled = true;
+    if (trainBtn) trainBtn.disabled = true;
+  }
+
+  hideUnitActions() {
+    const moveBtn = document.getElementById("move-unit");
+    const attackBtn = document.getElementById("attack");
+    const buildBtn = document.getElementById("build");
+    const trainBtn = document.getElementById("train-unit");
+
+    if (moveBtn) moveBtn.disabled = true;
+    if (attackBtn) attackBtn.disabled = true;
+    if (buildBtn) buildBtn.disabled = true;
+    if (trainBtn) trainBtn.disabled = true;
+  }
+
+  handleMoveAction(x, y) {
+    if (!this.selectedUnit) return;
+
+    const cell = this.gameState.map_data[y][x];
+    if (!cell || cell.unit || cell.building) return;
+
+    // Check if move is valid
+    const distance = Math.abs(this.selectedUnit.x - x) + Math.abs(this.selectedUnit.y - y);
+    if (distance > this.selectedUnit.movement_range) return;
+
+    // Send move action
+    this.socket.send(
+      JSON.stringify({
+        type: "move",
+        unit_id: this.selectedUnit.id,
         x: x,
         y: y,
-      });
-      this.cancelAction();
-    }
+      })
+    );
+
+    this.cancelAction();
+  }
+
+  handleAttackAction(x, y) {
+    if (!this.selectedUnit) return;
+
+    const cell = this.gameState.map_data[y][x];
+    if (!cell || !cell.unit || cell.unit.owner_id === this.playerId) return;
+
+    // Check if attack is valid
+    const distance = Math.abs(this.selectedUnit.x - x) + Math.abs(this.selectedUnit.y - y);
+    if (distance > this.selectedUnit.attack_range) return;
+
+    // Send attack action
+    this.socket.send(
+      JSON.stringify({
+        type: "attack",
+        unit_id: this.selectedUnit.id,
+        target_id: cell.unit.id,
+      })
+    );
+
+    this.cancelAction();
+  }
+
+  handleBuildAction(x, y) {
+    if (!this.selectedUnit) return;
+
+    const cell = this.gameState.map_data[y][x];
+    if (!cell || cell.unit || cell.building) return;
+
+    // Check if build is valid
+    const distance = Math.abs(this.selectedUnit.x - x) + Math.abs(this.selectedUnit.y - y);
+    if (distance > 1) return;
+
+    // Send build action
+    this.socket.send(
+      JSON.stringify({
+        type: "build",
+        unit_id: this.selectedUnit.id,
+        x: x,
+        y: y,
+        building_type: this.currentAction.buildingType,
+      })
+    );
+
+    this.cancelAction();
+  }
+
+  handleTrainAction(x, y) {
+    if (!this.selectedUnit) return;
+
+    const cell = this.gameState.map_data[y][x];
+    if (!cell || cell.unit || cell.building) return;
+
+    // Check if train is valid
+    const distance = Math.abs(this.selectedUnit.x - x) + Math.abs(this.selectedUnit.y - y);
+    if (distance > 1) return;
+
+    // Send train action
+    this.socket.send(
+      JSON.stringify({
+        type: "train",
+        unit_id: this.selectedUnit.id,
+        x: x,
+        y: y,
+        unit_type: this.currentAction.unitType,
+      })
+    );
+
+    this.cancelAction();
   }
 
   startBuildAction(buildingType) {
@@ -300,11 +391,10 @@ export class GameUI {
 
   cancelAction() {
     this.currentAction = null;
-    document
-      .querySelectorAll(".valid-move, .valid-attack, .valid-build")
-      .forEach((el) => {
-        el.classList.remove("valid-move", "valid-attack", "valid-build");
-      });
+    const validElements = document.querySelectorAll(".valid-move, .valid-attack, .valid-build");
+    validElements.forEach((el) => {
+      el.classList.remove("valid-move", "valid-attack", "valid-build");
+    });
     this.updateActionPanel();
   }
 
@@ -341,23 +431,23 @@ export class GameUI {
   }
 
   sendChatMessage() {
-    const message = document.getElementById("chat-input").value.trim();
-    if (!message) return;
-
-    this.connection.sendChatMessage(message);
-    document.getElementById("chat-input").value = "";
+    const chatInput = document.getElementById("chat-input");
+    const message = chatInput.value.trim();
+    if (message) {
+      this.connection.sendChatMessage(message);
+      chatInput.value = "";
+    }
   }
 
   addChatMessage(username, message) {
-    const isSystem = username === "System";
-    const chatMessage = document.createElement("div");
-    chatMessage.className = `chat-message ${
-      isSystem ? "chat-message-system" : "chat-message-user"
-    }`;
-    chatMessage.innerHTML = `<strong>${username}:</strong> ${message}`;
-
-    const chatContainer = document.getElementById("chat-container");
-    chatContainer.appendChild(chatMessage);
-    chatContainer.scrollTop = chatContainer.scrollHeight;
+    const chatMessages = document.getElementById("chat-messages");
+    const messageElement = document.createElement("div");
+    messageElement.className = "chat-message mb-2";
+    messageElement.innerHTML = `
+      <span class="font-semibold text-blue-600 dark:text-blue-400">${username}:</span>
+      <span class="ml-2 text-gray-700 dark:text-gray-300">${message}</span>
+    `;
+    chatMessages.appendChild(messageElement);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 }

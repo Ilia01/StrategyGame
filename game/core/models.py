@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from .constants import (
     GAME_MIN_MAP_SIZE, 
     GAME_MAX_MAP_SIZE,
@@ -19,7 +20,9 @@ class Game(models.Model):
     current_turn = models.IntegerField(default=1)
     max_players = models.PositiveSmallIntegerField(default=2)
     map_size = models.PositiveIntegerField(default=10)
-    map_data = models.JSONField(default=dict) 
+    map_data = models.JSONField(default=dict)
+    current_player_index = models.PositiveSmallIntegerField(default=0)
+    game_state = models.JSONField(default=dict)  # Stores game state like resources, etc.
 
     class Meta:
         ordering = ['-created_at']
@@ -33,46 +36,28 @@ class Game(models.Model):
     def __str__(self):
         return self.name
 
-    def get_map(self):
-        try:
-            return json.loads(self.map_data)
-        except:
-            return dict
-
-    def set_map(self, map_data):
-        self.map_data = json.dumps(map_data)
-
-    def get_visible_cells(self, player):
-        """Get cells visible to a player (fog of war)"""
-        from game.utils.game_helpers import calculate_visibility_map
-        return calculate_visibility_map(self, player)
-
-    def get_current_player(self):
+    @property
+    def current_player(self):
         """Get the current player"""
-        current_player_number = (self.current_turn - 1) % self.max_players + 1
-        return self.players.filter(player_number=current_player_number).first()
+        if not self.players.exists():
+            return None
+        return self.players.all()[self.current_player_index]
 
-    def get_next_player_number(self):
-        """Get the next available player number"""
-        used_numbers = set(self.players.values_list('player_number', flat=True))
-        for num in range(1, self.max_players + 1):
-            if num not in used_numbers:
-                return num
-        return None
+    @property
+    def active_players(self):
+        """Get all active players"""
+        return self.players.filter(is_active=True)
 
+    @property
     def is_full(self):
         """Check if game has maximum number of players"""
-        return self.players.filter(is_active=True).count() >= self.max_players
-
-    def get_active_player_count(self):
-        """Get number of active players"""
-        return self.players.filter(is_active=True).count()
+        return self.active_players.count() >= self.max_players
 
     def can_join(self, user):
         """Check if user can join the game"""
         if not self.is_active:
             return False, "Game is not active"
-        if self.is_full():
+        if self.is_full:
             return False, "Game is full"
         if self.players.filter(user=user).exists():
             return False, "Already in game"
@@ -84,29 +69,38 @@ class Game(models.Model):
         if not can_join:
             raise ValueError(message)
 
-        next_number = self.get_next_player_number()
-        if next_number is None:
-            raise ValueError("No available player numbers")
-
-        return Player.objects.create(
+        player = Player.objects.create(
             user=user,
             game=self,
-            player_number=next_number
+            player_number=self.active_players.count() + 1
         )
-    
+        
+        # Initialize player state
+        self.game_state[str(player.id)] = {
+            'resources': 100,
+            'units': [],
+            'buildings': []
+        }
+        self.save()
+        return player
+
+    def next_turn(self):
+        """Advance to the next turn"""
+        self.current_turn += 1
+        self.current_player_index = (self.current_player_index + 1) % self.active_players.count()
+        self.save()
+
     def deactivate(self):
         """Properly deactivate a game"""
         self.is_active = False
         self.save()
 
-
 class Player(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="players")
     player_number = models.PositiveSmallIntegerField()
-    resources = models.PositiveIntegerField(default=100)
-    joined_at = models.DateTimeField(auto_now_add=True)
     is_active = models.BooleanField(default=True)
+    joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = [
@@ -115,66 +109,58 @@ class Player(models.Model):
         ]
         ordering = ['player_number']
 
-    def save(self, *args, **kwargs):
-        if not self.pk and not self.player_number:
-            self.player_number = self.game.get_next_player_number()
-            if self.player_number is None:
-                raise ValueError("No available player numbers")
-        super().save(*args, **kwargs)
+    def __str__(self):
+        return f"{self.user.username} in {self.game.name}"
+
+    @property
+    def resources(self):
+        """Get player's resources from game state"""
+        return self.game.game_state.get(str(self.id), {}).get('resources', 0)
 
     def deactivate(self):
         """Properly deactivate a player"""
         self.is_active = False
         self.save()
 
-        if self.game.get_active_player_count() == 0:
+        if self.game.active_players.count() == 0:
             self.game.deactivate()
 
+class GameEntity(models.Model):
+    """Base class for game entities (units and buildings)"""
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="%(class)ss")
+    x_position = models.PositiveIntegerField()
+    y_position = models.PositiveIntegerField()
+    health = models.PositiveIntegerField(default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+
     def __str__(self):
-        return f"{self.user.username} in {self.game.name}"
+        return f"{self.__class__.__name__} at ({self.x_position}, {self.y_position})"
 
-
-class Unit(models.Model):
+class Unit(GameEntity):
     UNIT_CHOICES = [(data['name'], data['display']) for data in UNIT_TYPES.values()]
     
-    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="units")
     unit_type = models.CharField(max_length=20, choices=UNIT_CHOICES)
-    x_position = models.PositiveIntegerField()
-    y_position = models.PositiveIntegerField() 
-    health = models.PositiveIntegerField(default=100)
     attack = models.PositiveIntegerField(default=10)
     defense = models.PositiveIntegerField(default=5)
     movement_range = models.PositiveIntegerField(default=2)
     attack_range = models.PositiveIntegerField(default=1)
     has_moved = models.BooleanField(default=False)
     has_attacked = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']
 
-    def __str__(self):
-        return (
-            f"{self.get_unit_type_display()} at ({self.x_position}, {self.y_position})"
-        )
-
-class Building(models.Model):
+class Building(GameEntity):
     BUILDING_CHOICES = [(data['name'], data['display']) for data in BUILDING_TYPES.values()]
     
-    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="buildings")
     building_type = models.CharField(max_length=20, choices=BUILDING_CHOICES)
-    x_position = models.PositiveIntegerField()
-    y_position = models.PositiveIntegerField()
-    health = models.PositiveIntegerField(default=200)
     resource_production = models.PositiveIntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['created_at']
-
-    def __str__(self):
-        return f"{self.get_building_type_display()} at ({self.x_position}, {self.y_position})"
-
 
 class Turn(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name="turns")
@@ -196,14 +182,8 @@ class Turn(models.Model):
     def __str__(self):
         return f"Turn {self.turn_number} by {self.player.user.username} in {self.game.name}"
 
-    def get_actions(self):
-        try:
-            return json.loads(self.actions)
-        except:
-            return []
-
-    def add_action(self, action):
-        actions = self.get_actions()
-        actions.append(action)
-        self.actions = json.dumps(actions)
+    def complete(self):
+        """Mark turn as completed"""
+        self.completed = True
+        self.completed_at = timezone.now()
         self.save()

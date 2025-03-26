@@ -1,21 +1,49 @@
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
-from .models import Game, Player, Unit, Building, Turn
+from game.core.models import Game, Player, Unit, Building, Turn
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
+from game.services import GameService, GameStateService, ActionService, PlayerService
 
 
 class GameConsumer(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.game_service = GameService()
+        self.state_service = GameStateService()
+        self.action_service = ActionService()
+        self.player_service = PlayerService()
+
     async def connect(self):
         self.user = self.scope["user"]
         self.game_id = self.scope["url_route"]["kwargs"]["game_id"]
         self.room_group_name = f"game_{self.game_id}"
 
+        # Verify user is part of the game
+        if not await self.is_player_in_game():
+            await self.close()
+            return
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
+        # Remove from game group
         await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        
+        # Notify other players about disconnection
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "game_update",
+                "update_type": "player_disconnected",
+                "data": {
+                    "player_id": self.user.id,
+                    "username": self.user.username,
+                }
+            }
+        )
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -34,6 +62,32 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.room_group_name,
                 {"type": "chat_message", "username": username, "message": message},
             )
+        elif message_type == "game_action":
+            action_type = data.get("action_type")
+            action_data = data.get("action_data", {})
+            
+            try:
+                result = await self.handle_game_action(action_type, action_data)
+                if result.get("success"):
+                    # Broadcast game update to all players
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            "type": "game_update",
+                            "update_type": action_type,
+                            "data": result.get("data", {}),
+                        }
+                    )
+                else:
+                    await self.send(text_data=json.dumps({
+                        "type": "error",
+                        "message": result.get("error", "Unknown error occurred")
+                    }))
+            except Exception as e:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": str(e)
+                }))
 
     async def chat_message(self, event):
         await self.send(
@@ -47,87 +101,28 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def game_update(self, event):
-        await self.send(
-            text_data=json.dumps(
-                {
-                    "type": "game_update",
-                    "update_type": event["update_type"],
-                    "data": event["data"],
-                }
-            )
-        )
+        await self.send(text_data=json.dumps({
+            "type": "game_update",
+            "update_type": event["update_type"],
+            "data": event["data"]
+        }))
+
+    @database_sync_to_async
+    def is_player_in_game(self):
+        return self.player_service.is_player_in_game(self.user, self.game_id)
 
     @database_sync_to_async
     def get_game_state(self):
-        """Get the current state of the game"""
+        return self.state_service.get_game_state(self.game_id, self.user)
+
+    @database_sync_to_async
+    def handle_game_action(self, action_type, action_data):
         try:
-            game = Game.objects.get(id=self.game_id)
-
-            players = []
-            for player in Player.objects.filter(game=game):
-                players.append(
-                    {
-                        "id": player.id,
-                        "username": player.user.username,
-                        "player_number": player.player_number,
-                        "resources": player.resources,
-                        "is_active": player.is_active,
-                    }
-                )
-
-            units = []
-            for unit in Unit.objects.filter(player__game=game):
-                units.append(
-                    {
-                        "id": unit.id,
-                        "player_id": unit.player.id,
-                        "unit_type": unit.unit_type,
-                        "x": unit.x_position,
-                        "y": unit.y_position,
-                        "health": unit.health,
-                        "attack": unit.attack,
-                        "defense": unit.defense,
-                        "movement_range": unit.movement_range,
-                        "attack_range": unit.attack_range,
-                    }
-                )
-
-            buildings = []
-            for building in Building.objects.filter(player__game=game):
-                buildings.append(
-                    {
-                        "id": building.id,
-                        "player_id": building.player.id,
-                        "building_type": building.building_type,
-                        "x": building.x_position,
-                        "y": building.y_position,
-                        "health": building.health,
-                    }
-                )
-
-            current_player_number = (game.current_turn - 1) % game.max_players + 1
-            try:
-                current_player = Player.objects.get(
-                    game=game, player_number=current_player_number
-                )
-                current_player_id = current_player.id
-                current_player_username = current_player.user.username
-            except Player.DoesNotExist:
-                current_player_id = None
-                current_player_username = None
-
-            return {
-                "game_id": game.id,
-                "name": game.name,
-                "current_turn": game.current_turn,
-                "current_player_id": current_player_id,
-                "current_player_username": current_player_username,
-                "map_size": game.map_size,
-                "map_data": game.get_map(),
-                "players": players,
-                "units": units,
-                "buildings": buildings,
-                "is_active": game.is_active,
-            }
-        except Game.DoesNotExist:
-            return {"error": "Game not found"}
+            return self.action_service.process_action(
+                game_id=self.game_id,
+                user=self.user,
+                action_type=action_type,
+                action_data=action_data
+            )
+        except Exception as e:
+            return {"success": False, "error": str(e)}
