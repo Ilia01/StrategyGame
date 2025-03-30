@@ -26,11 +26,25 @@ def run_tailwind():
     tailwind_cmd = ["python", "manage.py", "tailwind", "start"]
     return subprocess.Popen(tailwind_cmd)
 
+def run_venv():
+    """Activate the virtual environment"""
+    print("Activating virtual environment...")
+    venv_path = os.path.join(os.path.dirname(__file__), 'venv', 'Scripts', 'activate.bat')
+    if os.path.exists(venv_path):
+        return subprocess.Popen([venv_path])
+    else:
+        print("Virtual environment not found. Please create it first.")
+        sys.exit(1)
+
 def main():
     print("Starting development servers...")
     
     processes = []
     try:
+        venv_process = run_venv()
+        time.sleep(2)
+        processes.append(venv_process)
+        
         tailwind_process = run_tailwind()
         processes.append(tailwind_process)
         time.sleep(2)
