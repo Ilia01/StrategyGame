@@ -52,7 +52,6 @@ class ActionService:
         if current_player != player:
             raise ValueError("Not your turn")
 
-        # Create or get turn record
         turn, created = Turn.objects.get_or_create(
             game=game,
             player=player,
@@ -69,12 +68,10 @@ class ActionService:
                 raise ValueError(f"Invalid action type: {action_type}")
             self.action_handlers[action_type](handler, action)
 
-        # Mark turn as completed
         turn.completed = True
         turn.completed_at = timezone.now()
         turn.save()
 
-        # Check if all players have completed their turns
         advance_game_if_all_turns_complete(game)
 
         return True
@@ -91,11 +88,11 @@ class ActionService:
             raise ValueError("Not your turn")
 
         action_handlers = {
-            'move_unit': self._handle_move_unit,
-            'attack': self._handle_attack,
-            'build': self._handle_build,
-            'train_unit': self._handle_train_unit,
-            'end_turn': self._handle_end_turn
+            'move_unit': self._handle_move_action,
+            'attack': self._handle_attack_action,
+            'build': self._handle_build_action,
+            'train_unit': self._handle_train_action,
+            'end_turn': self._handle_end_turn_action
         }
 
         handler = action_handlers.get(action_type)
@@ -109,15 +106,12 @@ class ActionService:
         building_type = action.get('building_type')
         x, y = action.get('x'), action.get('y')
         
-        # Validate position
         if not is_valid_build_position(x, y, handler.game):
             raise ValueError("Invalid build position")
 
-        # Check cost
         cost = get_building_cost(building_type)
         handler.validate_resources(cost)
 
-        # Create building
         Building.objects.create(
             player=handler.player,
             building_type=building_type,
@@ -125,7 +119,6 @@ class ActionService:
             y_position=y
         )
         
-        # Deduct resources
         handler.deduct_resources(cost)
 
     def _handle_move_action(self, handler, action):
@@ -180,14 +173,12 @@ class ActionService:
         barracks_id = action.get('barracks_id')
         unit_type = action.get('unit_type')
         
-        # Verify barracks exists and belongs to player
         barracks = Building.objects.get(
             id=barracks_id,
             player=handler.player,
             building_type='barracks'
         )
 
-        # Check cost
         cost = get_unit_cost(unit_type)
         handler.validate_resources(cost)
 

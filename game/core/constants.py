@@ -113,7 +113,7 @@ TERRAIN_TYPES = {
     },
     'WATER': {
         'name': 'water',
-        'movement_cost': float('inf'),
+        'movement_cost': 'unlimited',
         'spawn_weight': 0.1
     }
 }

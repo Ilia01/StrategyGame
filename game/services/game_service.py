@@ -89,3 +89,11 @@ class GameService:
     def is_in_attack_range(self, attacker, target):
         """Check if a target is within attack range"""
         return self.combat_service.is_in_range(attacker, target)
+    
+    def build_structure(self, game, player, building_type, x, y):
+        """Build a structure on the map"""
+        return self.action_service.process_action(game, player, 'build', {
+            'building_type': building_type,
+            'x': x,
+            'y': y
+        })

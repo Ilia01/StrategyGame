@@ -1,10 +1,10 @@
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
 router = DefaultRouter()
 router.register(r'games', views.GameViewSet)
 
-urlpatterns = router.urls + [
-    path('constants/', views.get_game_constants, name='game-constants'),
+urlpatterns = [
+    path("", include(router.urls)),
 ]

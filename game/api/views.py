@@ -64,7 +64,6 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         try:
             player = self.game_service.manage_player_in_game(request.user, game, 'add')
             return Response({
-                "success": True,
                 "player_number": player.player_number,
                 "message": "Successfully joined the game"
             }, status=status.HTTP_200_OK)
@@ -77,8 +76,63 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         try:
             self.game_service.manage_player_in_game(request.user, game, 'remove')
             return Response({
-                "success": True,
                 "message": "Successfully left the game"
+            }, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def move_unit(self, request, pk=None):
+        game = self.get_object()
+        player = get_object_or_404(Player, user=request.user, game=game)
+        unit_id = request.data.get('unit_id')
+        x = request.data.get('x')
+        y = request.data.get('y')
+
+        unit = get_object_or_404(Unit, id=unit_id, player=player)
+        if unit.moved:
+            return Response({"error": "Unit has already moved this turn"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            self.game_service.move_unit(unit, x, y)
+            return Response({
+                "success": True,
+                "message": "Unit moved successfully"
+            }, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=True, methods=['post'])
+    def build_structure(self, request, pk=None):
+        game = self.get_object()
+        player = get_object_or_404(Player, user=request.user, game=game)
+        building_type = request.data.get('building_type')
+        x = request.data.get('x')
+        y = request.data.get('y')
+
+        try:
+            self.game_service.build_structure(player, building_type, x, y)
+            return Response({
+                "message": "Building created successfully"
+            }, status=status.HTTP_200_OK)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def train_unit(self, request, pk=None):
+        game = self.get_object()
+        player = get_object_or_404(Player, user=request.user, game=game)
+        building_id = request.data.get('building_id')
+        unit_type = request.data.get('unit_type')
+
+        building = get_object_or_404(Building, id=building_id, player=player)
+        if building.trained:
+            return Response({"error": "Building has already trained this turn"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            self.game_service.train_unit(building, unit_type)
+            return Response({
+                "message": "Unit trained successfully"
             }, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -170,15 +224,14 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         }
         
         return Response(combat_stats)
-
-@api_view(['GET'])
-def get_game_constants(request):
-    """Return all game constants for frontend use"""
-    return Response({
-        'units': UNIT_TYPES,
-        'buildings': BUILDING_TYPES,
-        'terrain': TERRAIN_TYPES,
-        'mapSizes': dict(MAP_SIZE_CHOICES),
-        'playerCounts': dict(MAX_PLAYERS_CHOICES),
-        'gameRules': GAME_RULES
-    })
+    
+    @action(detail=False, methods=['get'])
+    def constants(self, request):
+        return Response({
+            'unit_types': UNIT_TYPES,
+            'building_types': BUILDING_TYPES,
+            'terrain_types': TERRAIN_TYPES,
+            'map_size_choices': MAP_SIZE_CHOICES,
+            'max_players_choices': MAX_PLAYERS_CHOICES,
+            'game_rules': GAME_RULES
+        })
