@@ -1,15 +1,12 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Prefetch
+from django.core.exceptions import ValidationError
 from game.core.models import Game, Player, Unit, Building, Turn
 from game.utils.game_helpers import (
     generate_map,
-    get_starting_position,
-    is_valid_build_position,
     is_valid_move,
-    is_valid_attack,
-    calculate_damage
+    is_valid_build_position
 )
 from game.core.game_rules import GAME_RULES
 from .state_service import GameStateService
@@ -32,10 +29,10 @@ class GameService:
             map_size=map_size,
             max_players=max_players,
             created_by=user,
-            map_data=generate_map(map_size)
+            map_data=generate_map(map_size),
         )
         
-        game.add_player(user)
+        self.add_player(game, user)
         return game
 
     def get_game_state(self, game_id, user):
@@ -47,21 +44,29 @@ class GameService:
         return self.state_service.get_home_page_state(user)
 
     @transaction.atomic
-    def manage_player_in_game(self, user, game, action='add'):
-        """Add or remove a player from a game"""
-        if action == 'add':
-            return game.add_player(user)
-        elif action == 'remove':
-            player = game.players.get(user=user)
-            player.deactivate()
-            return True
-        raise ValueError(f"Invalid action: {action}")
+    def add_player(self, game, user):
+        """Add a new player to the game"""
+        can_join, message = self.player_service.can_join_game(game, user)
+        if not can_join:
+            raise ValidationError(message)
+        return self.player_service.add_player(game, user)
+
+    @transaction.atomic
+    def remove_player(self, game, user):
+        """Remove a player from the game"""
+        player = get_object_or_404(Player, game=game, user=user)
+        self.player_service.deactivate_player(player)
+        
+        if not self.get_active_players(game).exists():
+            self.deactivate_game(game)
+        return True
 
     @transaction.atomic
     def process_turn_actions(self, game, player, actions):
         """Process a player's turn actions"""
-        if game.current_player != player:
-            raise ValueError("Not your turn")
+        current_player = self.get_current_player(game)
+        if current_player != player:
+            raise ValidationError("Not your turn")
 
         turn = Turn.objects.create(
             game=game,
@@ -71,29 +76,126 @@ class GameService:
 
         try:
             result = self.action_service.process_turn_actions(game, player, actions)
-            turn.complete()
-            game.next_turn()
+            turn.completed = True
+            turn.completed_at = timezone.now()
+            turn.save()
+            self.next_turn(game)
             return result
         except Exception as e:
             turn.delete()
             raise e
 
-    def get_unit_stats(self, unit_type):
-        """Get the stats for a unit type"""
-        return self.combat_service.get_unit_stats(unit_type)
-
-    def calculate_combat_power(self, unit):
-        """Calculate the combat power of a unit"""
-        return self.combat_service.calculate_combat_power(unit)
-
-    def is_in_attack_range(self, attacker, target):
-        """Check if a target is within attack range"""
-        return self.combat_service.is_in_range(attacker, target)
-    
     def build_structure(self, game, player, building_type, x, y):
-        """Build a structure on the map"""
-        return self.action_service.process_action(game, player, 'build', {
-            'building_type': building_type,
-            'x': x,
-            'y': y
-        })
+        """Build a structure at the specified coordinates"""
+        if not game.is_active:
+            raise ValidationError("Game is not active")
+
+        current_player = self.get_current_player(game)
+        if current_player != player:
+            raise ValidationError("Not your turn")
+
+        if not is_valid_build_position(game.map_data, x, y):
+            raise ValidationError("Invalid build position")
+
+        cost = GAME_RULES['BUILDING_COSTS'][building_type]
+        if not self.player_service.has_enough_resources(player, cost):
+            raise ValidationError("Not enough resources")
+
+        building = Building.objects.create(
+            player=player,
+            building_type=building_type,
+            x_position=x,
+            y_position=y
+        )
+
+        self.player_service.update_resources(player, -cost)
+        return building
+
+    def move_unit(self, game, player, unit_id, x, y):
+        """Move a unit to new coordinates"""
+        if not game.is_active:
+            raise ValidationError("Game is not active")
+
+        current_player = self.get_current_player(game)
+        if current_player != player:
+            raise ValidationError("Not your turn")
+
+        unit = get_object_or_404(Unit, id=unit_id, player=player)
+        if unit.has_moved:
+            raise ValidationError("Unit has already moved this turn")
+
+        if not is_valid_move(unit, x, y, game.map_data):
+            raise ValidationError("Invalid move position")
+
+        unit.x_position = x
+        unit.y_position = y
+        unit.has_moved = True
+        unit.save()
+        return unit
+
+    def train_unit(self, building, unit_type):
+        """Train a new unit at a building"""
+        game = building.player.game
+        if not game.is_active:
+            raise ValidationError("Game is not active")
+
+        current_player = self.get_current_player(game)
+        if current_player != building.player:
+            raise ValidationError("Not your turn")
+
+        cost = GAME_RULES['UNIT_COSTS'][unit_type]
+        if not self.player_service.has_enough_resources(building.player, cost):
+            raise ValidationError("Not enough resources")
+
+        unit = Unit.objects.create(
+            player=building.player,
+            unit_type=unit_type,
+            x_position=building.x_position,
+            y_position=building.y_position
+        )
+
+        self.player_service.update_resources(building.player, -cost)
+        return unit
+
+    @transaction.atomic
+    def next_turn(self, game):
+        """Advance to the next turn"""
+        active_players = self.get_active_players(game).count()
+        if active_players == 0:
+            raise ValidationError("No active players in game")
+            
+        game.current_turn += 1
+        game.current_player_index = (game.current_player_index + 1) % active_players
+        game.save()
+
+        # Reset unit movement and attack flags
+        Unit.objects.filter(player__game=game).update(
+            has_moved=False,
+            has_attacked=False
+        )
+
+    @transaction.atomic
+    def deactivate_game(self, game):
+        """Deactivate a game"""
+        game.is_active = False
+        game.save()
+
+    def get_current_player(self, game):
+        """Get the current player in the game"""
+        if not game.players.exists():
+            return None
+        active_players = list(self.get_active_players(game))
+        if not active_players:
+            return None
+        return active_players[game.current_player_index]
+
+    def get_active_players(self, game):
+        """Get all active players in the game"""
+        return game.players.filter(is_active=True)
+
+    def calculate_combat_stats(self, unit):
+        """Calculate combat stats for a unit"""
+        return {
+            'combat_power': self.combat_service.calculate_combat_power(unit),
+            'attack_range': self.combat_service.get_attack_range(unit)
+        }

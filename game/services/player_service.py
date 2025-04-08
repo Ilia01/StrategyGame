@@ -1,54 +1,101 @@
+from django.shortcuts import get_object_or_404
 from django.db import transaction
-from game.utils.game_helpers import get_starting_position
-from game.core.models import Player, Building, Unit
+from django.contrib.auth import get_user_model
+from game.core.models import Player, Game, Unit, Building
+from game.core.game_rules import GAME_RULES
+from django.core.exceptions import ValidationError
 
 class PlayerService:
-    @transaction.atomic
-    def add_player(self, user, game):
-        """Add a new player to the game with starting resources and units"""
+    def can_join_game(self, game, user):
+        """Check if a user can join a game"""
         if not game.is_active:
-            raise ValueError("Cannot join inactive game")
-            
-        if game.is_full:
-            raise ValueError("Game is full")
+            return False, "Game is not active"
             
         if game.players.filter(user=user).exists():
-            raise ValueError("Already in game")
+            return False, "You are already in this game"
+            
+        active_players = game.players.filter(is_active=True)
+        if active_players.count() >= game.max_players:
+            return False, "Game is full"
+            
+        return True, None
 
+    @transaction.atomic
+    def add_player(self, game, user):
+        """Add a player to a game with initial setup"""
+        active_players = game.players.filter(is_active=True)
         player = Player.objects.create(
-            user=user,
             game=game,
-            player_number=game.active_players.count() + 1
+            user=user,
+            player_number=active_players.count() + 1,
+            resources=GAME_RULES.get("INITIAL_RESOURCES"),
         )
-
-        starting_position = get_starting_position(
-            game.map_data, 
-            player.player_number,
-            game.map_size
-        )
-
-        Building.objects.create(
-            player=player,
-            building_type='base',
-            x_position=starting_position['x'],
-            y_position=starting_position['y'],
-            health=300,
-            resource_production=10
-        )
-
-        Unit.objects.create(
-            player=player,
-            unit_type='infantry',
-            x_position=starting_position['x'] + 1,
-            y_position=starting_position['y'],
-            health=100,
-            attack=10,
-            defense=5,
-            movement_range=2,
-            attack_range=1
-        )
-
+        
+        self._initialize_player_state(player)
         return player
+
+    @transaction.atomic
+    def deactivate_player(self, player):
+        """Deactivate a player and their entities"""
+        player.is_active = False
+        player.save()
+        
+        Unit.objects.filter(player=player).update(is_active=False)
+        Building.objects.filter(player=player).update(is_active=False)
+
+    def get_player_resources(self, player):
+        """Get player's current resources"""
+        return player.resources
+
+    def update_resources(self, player, amount):
+        """Update player's resources"""
+        player.resources += amount
+        player.save()
+
+    def has_enough_resources(self, player, cost):
+        """Check if player has enough resources"""
+        return player.resources >= cost
+
+    @transaction.atomic
+    def _initialize_player_state(self, player):
+        """Initialize a new player's starting units and buildings"""
+        starting_units = GAME_RULES.get("STARTING_UNITS", {})
+        for unit_type, count in starting_units.items():
+            for _ in range(count):
+                Unit.objects.create(
+                    player=player,
+                    unit_type=unit_type,
+                    x_position=player.game.map_size // 2,
+                    y_position=player.game.map_size // 2
+                )
+                
+        starting_buildings = GAME_RULES.get("STARTING_BUILDINGS", {})
+        for building_type, count in starting_buildings.items():
+            for _ in range(count):
+                Building.objects.create(
+                    player=player,
+                    building_type=building_type,
+                    x_position=player.game.map_size // 2,
+                    y_position=player.game.map_size // 2
+                )
+
+    def is_player_in_game(self, user, game_id):
+        """Check if user is a player in the game"""
+        return Player.objects.filter(
+            game_id=game_id,
+            user=user,
+            is_active=True
+        ).exists()
+
+    def get_player_data(self, player):
+        """Get player data for state updates"""
+        return {
+            "id": player.id, 
+            "username": player.user.username,
+            "player_number": player.player_number,
+            "resources": player.resources,
+            "is_active": player.is_active
+        }
 
     @transaction.atomic
     def remove_player(self, user, game):
@@ -66,21 +113,3 @@ class PlayerService:
             game.deactivate()
             
         return True
-
-    def is_player_in_game(self, user, game_id):
-        """Check if user is a player in the game"""
-        return Player.objects.filter(
-            game_id=game_id,
-            user=user,
-            is_active=True
-        ).exists()
-
-    def get_player_data(self, player):
-        """Get player data for state updates"""
-        return {
-            "id": player.id, 
-            "username": player.user.username,
-            "player_number": player.player_number,
-            "resources": player.resources,
-            "is_active": player.is_active # debatable
-        }

@@ -52,7 +52,7 @@ class ActionService:
         if current_player != player:
             raise ValueError("Not your turn")
 
-        turn, created = Turn.objects.get_or_create(
+        turn = Turn.objects.get_or_create(
             game=game,
             player=player,
             turn_number=game.current_turn
@@ -76,16 +76,24 @@ class ActionService:
 
         return True
 
-    def process_action(self, game_id, user, action_type, action_data):
+    def process_action(self, game_id, user_or_player, action_type, action_data):
         """Process a game action"""
         game = Game.objects.get(id=game_id)
-        player = Player.objects.get(game=game, user=user)
+        
+        if isinstance(user_or_player, Player):
+            player = user_or_player
+        else:
+            player = Player.objects.get(game=game, user=user_or_player)
 
         if not game.is_active:
             raise ValueError("Game is not active")
 
-        if game.get_current_player() != player:
-            raise ValueError("Not your turn")
+        try:
+            current_player = game.players.all()[game.current_player_index]
+            if current_player != player:
+                raise ValueError("Not your turn")
+        except (IndexError, Player.DoesNotExist):
+            raise ValueError("Invalid game state")
 
         action_handlers = {
             'move_unit': self._handle_move_action,
@@ -101,25 +109,47 @@ class ActionService:
 
         return handler(game, player, action_data)
 
-    def _handle_build_action(self, handler, action):
+    def _handle_build_action(self, game, player, action_data):
         """Handle building construction"""
-        building_type = action.get('building_type')
-        x, y = action.get('x'), action.get('y')
+        building_type = action_data.get('building_type')
+        x = action_data.get('x')
+        y = action_data.get('y')
         
-        if not is_valid_build_position(x, y, handler.game):
+        if not all([building_type, x is not None, y is not None]):
+            raise ValueError("Missing required fields for building action")
+
+        if not is_valid_build_position(x, y, game):
             raise ValueError("Invalid build position")
 
-        cost = get_building_cost(building_type)
-        handler.validate_resources(cost)
+        # Get building cost from constants
+        building_data = BUILDING_TYPES.get(building_type)
+        if not building_data:
+            raise ValueError(f"Invalid building type: {building_type}")
 
+        cost = building_data.get('cost', {})
+        if not cost:
+            raise ValueError(f"No cost defined for building type: {building_type}")
+
+        # Check if player has enough resources
+        for resource, amount in cost.items():
+            if player.resources.get(resource, 0) < amount:
+                raise ValueError(f"Insufficient {resource} for building {building_type}")
+
+        # Create the building
         Building.objects.create(
-            player=handler.player,
+            player=player,
             building_type=building_type,
             x_position=x,
-            y_position=y
+            y_position=y,
+            health=building_data.get('health', 200)
         )
         
-        handler.deduct_resources(cost)
+        # Deduct resources
+        for resource, amount in cost.items():
+            player.resources[resource] -= amount
+            player.save()
+
+        return {"message": f"Successfully built {building_type}"}
 
     def _handle_move_action(self, handler, action):
         """Handle unit movement"""

@@ -1,5 +1,8 @@
+from .turn_service import TurnService
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch, Count
+from django.utils import timezone
+from django.db import transaction
 from .base import BaseStateService
 from game.core.models import Game, Player, Unit, Building
 from game.api.serializers.game import GameSerializer
@@ -7,6 +10,9 @@ from game.core.game_rules import GAME_RULES
 from django.db import models
 
 class GameStateService(BaseStateService):
+    def __init__(self):
+        self.turn_service = TurnService()
+
     def get_game_state(self, game_id, user):
         """Get complete game state"""
         game = self._get_game_with_relations(game_id)
@@ -23,7 +29,35 @@ class GameStateService(BaseStateService):
             "is_active": game.is_active
         }
 
+    def get_current_player(self, game):
+        """Get the current player for a game"""
+        if not game.players.exists():
+            return None
+        return game.players.all()[game.current_player_index]
+
+    def get_active_players(self, game):
+        """Get all active players in a game"""
+        return game.players.filter(is_active=True)
+
+    def is_game_full(self, game):
+        """Check if game has maximum number of players"""
+        return self.get_active_players(game).count() >= game.max_players
+
+    @transaction.atomic
+    def advance_turn(self, game):
+        """Advance to the next turn"""
+        game.current_turn += 1
+        game.current_player_index = (game.current_player_index + 1) % self.get_active_players(game).count()
+        game.save()
+
+    @transaction.atomic
+    def deactivate_game(self, game):
+        """Deactivate a game"""
+        game.is_active = False
+        game.save()
+
     def _get_game_with_relations(self, game_id):
+        """Get game with all related data"""
         return Game.objects.select_related(
             'created_by'
         ).prefetch_related(
@@ -35,13 +69,13 @@ class GameStateService(BaseStateService):
     def get_home_page_state(self, user):
         active_games = Game.objects.filter(
             is_active=True
-        ).select_related('created_by').prefetch_related(
-            Prefetch('players', queryset=Player.objects.select_related('user')),
-            'players__units',
-            'players__buildings'
-        ).annotate(
+        ).select_related('created_by').annotate(
             player_count=Count('players', filter=models.Q(players__is_active=True))
         )
+        # .prefetch_related(
+        #     Prefetch('players', queryset=Player.objects.select_related('user')),
+        #     'players__units',
+        #     'players__buildings'
         
         my_games = active_games.filter(players__user=user).distinct()
         available_games = active_games.exclude(players__user=user).distinct()
@@ -57,12 +91,13 @@ class GameStateService(BaseStateService):
     def _get_player_context(self, game, user):
         try:
             player = Player.objects.select_related('user').get(user=user, game=game)
+            current_player = self.get_current_player(game)
             return {
                 'player': player,
                 'is_player': True,
                 'player_number': player.player_number,
                 'player_resources': player.resources,
-                'is_current_player': game.current_player == player
+                'is_current_player': current_player and current_player.id == player.id
             }
         except Player.DoesNotExist:
             return {
@@ -74,7 +109,7 @@ class GameStateService(BaseStateService):
     def _get_game_rules(self):
         return [
             {
-                'title': section_data['title'],
+                'title': section_data.get('title'),
                 'description': section_data.get('description'),
                 'items': section_data.get('items', [])
             }
@@ -83,7 +118,7 @@ class GameStateService(BaseStateService):
 
     def _get_current_player_data(self, game):
         """Get current player data for game state"""
-        current_player = game.current_player
+        current_player = self.get_current_player(game)
         if not current_player:
             return None
             
@@ -113,7 +148,6 @@ class GameStateService(BaseStateService):
                 'player_number': player.player_number,
                 'resources': player.resources,
                 'is_active': player.is_active,
-                # 'color': player.color,
                 'statistics': self._get_player_statistics(player)
             }
             for player in players
