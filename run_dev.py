@@ -60,8 +60,6 @@ def main():
         print("Daphne server (WebSocket): ws://localhost:8001")
         print("\nPress Ctrl+C to stop all servers...")
         
-        webbrowser.open('http://localhost:8000')
-        
         for process in processes:
             process.wait()
             
