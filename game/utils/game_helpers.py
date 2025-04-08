@@ -9,9 +9,9 @@ def generate_map(size):
     weights = [t['spawn_weight'] for t in terrain_types]
     map_data = {"size": size, "terrain": []}
     
-    for y in range(size):
+    for _ in range(size):
         row = []
-        for x in range(size):
+        for _ in range(size):
             terrain = random.choices(
                 [t['name'] for t in terrain_types], 
                 weights=weights
@@ -20,7 +20,7 @@ def generate_map(size):
         map_data["terrain"].append(row)
     return map_data
 
-def getTerrainMovementCost(terrain):
+def get_terrain_movement_cost(terrain):
     """Get movement cost for a terrain type."""
     for terrain_data in TERRAIN_TYPES.values():
         if terrain_data['name'] == terrain:
@@ -42,8 +42,13 @@ def get_starting_position(map_data, player_number, map_size):
 
 def is_player_turn(game, player):
     """Check if it's the player's turn."""
-    current_player_number = (game.current_turn - 1) % game.max_players + 1
-    return player.player_number == current_player_number
+    if not game.players.exists():
+        return False
+    try:
+        current_player = game.players.all()[game.current_player_index]
+        return player.id == current_player.id
+    except IndexError:
+        return False
 
 def is_valid_move(unit, x, y, game):
     """Check if a move is valid."""
@@ -107,6 +112,15 @@ def advance_game_if_all_turns_complete(game):
         game.current_turn += 1
         game.save()
 
+def _add_visible_cells(x, y, visibility_range, game_size, visible_cells):
+    """Helper function to add visible cells for a given position."""
+    for dx in range(-visibility_range, visibility_range + 1):
+        for dy in range(-visibility_range, visibility_range + 1):
+            if abs(dx) + abs(dy) <= visibility_range:
+                new_x, new_y = x + dx, y + dy
+                if 0 <= new_x < game_size and 0 <= new_y < game_size:
+                    visible_cells.add((new_x, new_y))
+
 def calculate_visibility_map(game, player):
     """Calculate which cells are visible to the player (fog-of-war)."""
     visibility_range = 3
@@ -114,11 +128,6 @@ def calculate_visibility_map(game, player):
     entities = list(Unit.objects.filter(player=player))
     entities.extend(Building.objects.filter(player=player))
     for entity in entities:
-        x, y = entity.x_position, y_position
-        for dx in range(-visibility_range, visibility_range + 1):
-            for dy in range(-visibility_range, visibility_range + 1):
-                if abs(dx) + abs(dy) <= visibility_range:
-                    new_x, new_y = x + dx, y + dy
-                    if 0 <= new_x < game.map_size and 0 <= new_y < game.map_size:
-                        visible_cells.add((new_x, new_y))
+        x, y = entity.x_position, entity.y_position
+        _add_visible_cells(x, y, visibility_range, game.map_size, visible_cells)
     return list(visible_cells)
