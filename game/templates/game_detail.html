@@ -3,43 +3,48 @@
 {% block title %}Game {{ game.name }} - Strategy Game{% endblock %}
 
 {% block css %}
+<link rel="stylesheet" href="{% static 'css/dist/styles.css' %}">
 {% endblock %}
 
 {% block content %}
-<div class="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-    <!-- Sticky Header -->
-    <header class="sticky top-0 z-10 bg-gray-800 dark:bg-gray-950 shadow-lg border-b border-gray-700">
-        <div class="container mx-auto px-4 py-3">
+<div class="flex flex-col h-screen max-h-screen bg-gray-900 text-gray-100 -mt-4 -mx-4 overflow-hidden">
+    <!-- CSRF Token -->
+    {% csrf_token %}
+
+    <!-- Game Header -->
+    <header class="sticky top-0 z-30 bg-gray-800 border-b border-gray-700 shadow-lg">
+        <div class="container mx-auto py-2 px-4">
             <div class="flex items-center justify-between">
                 <!-- Game Info -->
-                <div class="flex items-center space-x-6">
-                    <div class="flex flex-col">
-                        <div class="text-xl font-bold text-white dark:text-gray-100">
-                            Turn <span id="current-turn">{{ game.current_turn }}</span>
-                        </div>
-                        <div class="text-sm text-gray-400 dark:text-gray-300">
-                            Current Player: <span id="current-player">{{ current_player.name }}</span>
-                        </div>
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-xl font-bold text-white">
+                        Turn <span id="current-turn" class="text-yellow-400">{{ game.current_turn }}</span>
+                    </h1>
+                    <div class="flex items-center bg-gray-700 rounded-lg px-3 py-1.5">
+                        <span class="text-sm mr-2">Player:</span>
+                        <span id="current-player" class="text-sm font-medium text-blue-400">{{ current_player.name }}</span>
                     </div>
-                    <!-- Resources -->
-                    <div class="flex items-center space-x-4 bg-gray-700 dark:bg-gray-800 rounded-lg p-2">
-                        <div class="flex items-center space-x-2 text-white dark:text-gray-100">
-                            <i class="fas fa-coins text-yellow-400"></i>
-                            <span id="player-resources"
-                                class="text-yellow-300 font-medium">{{ current_player.resources }}</span>
-                        </div>
+                    <div class="flex items-center bg-gray-700 rounded-lg px-3 py-1.5">
+                        <i class="fas fa-coins text-yellow-400 mr-2"></i>
+                        <span id="player-resources" class="text-yellow-300 font-medium">{{ current_player.resources }}</span>
                     </div>
                 </div>
-                <!-- Connection Status and Leave Button -->
-                <div class="flex items-center space-x-4">
-                    <div class="text-sm text-gray-300">
-                        Status: <span id="connection-status" class="text-gray-400">Connecting...</span>
+                
+                <!-- Right side controls -->
+                <div class="flex items-center space-x-3">
+                    <div class="text-sm bg-gray-700 rounded-lg px-3 py-1.5">
+                        <span class="text-gray-300">Status:</span>
+                        <span id="connection-status" class="ml-1 text-green-400">Connected</span>
                     </div>
+                    
+                    <button id="toggle-ui-btn" class="flex items-center p-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-md">
+                        <i class="fas fa-columns"></i>
+                    </button>
+                    
                     <form method="post" action="{% url 'game:leave_game' game_id %}" class="inline">
                         {% csrf_token %}
-                        <button type="submit"
-                            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors duration-200 shadow">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Leave Game
+                        <button type="submit" class="flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-md">
+                            <i class="fas fa-sign-out-alt mr-1.5"></i>Leave
                         </button>
                     </form>
                 </div>
@@ -47,96 +52,125 @@
         </div>
     </header>
 
-    <div class="flex-1 overflow-hidden">
-        <div class="container mx-auto p-4 h-full">
-            <div class="grid grid-cols-12 gap-4 h-full">
-                <!-- Game Grid -->
-                <div class="col-span-9 flex items-center justify-center min-h-[600px]">
-                    <div class="game-board-container">
-                        <div id="game-board" class="game-board" data-game-id="{{ game_id }}">
-                            <div class="board-grid"></div>
-                            <div class="board-overlay"></div>
-                        </div>
-                        <div class="board-controls">
-                            <button class="zoom-in" title="Zoom In">
-                                <i class="fas fa-search-plus"></i>
-                            </button>
-                            <button class="zoom-out" title="Zoom Out">
-                                <i class="fas fa-search-minus"></i>
-                            </button>
-                            <button class="reset-view" title="Reset View">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                        </div>
+    <!-- Main Game Area -->
+    <div class="relative flex-1 overflow-hidden">
+        <!-- Full-screen Game Board -->
+        <div id="game-container" class="w-full h-full flex items-center justify-center">
+            <div id="game-board" class="game-board w-full h-full max-w-[800px] max-h-[800px] m-auto" data-game-id="{{ game_id }}">
+                <div class="board-grid"></div>
+                <div class="board-overlay"></div>
+            </div>
+            
+            <!-- Zoom Controls - Bottom Right -->
+            <div class="board-controls">
+                <button class="zoom-in" title="Zoom In">
+                    <i class="fas fa-search-plus"></i>
+                </button>
+                <button class="zoom-out" title="Zoom Out">
+                    <i class="fas fa-search-minus"></i>
+                </button>
+                <button class="reset-view" title="Reset View">
+                    <i class="fas fa-undo"></i>
+                </button>
+            </div>
+            
+            <!-- Action Buttons - Bottom Center -->
+            <div class="action-buttons">
+                <button id="end-turn-btn" class="action-btn end-turn-btn">
+                    <i class="fas fa-flag-checkered mr-2"></i>End Turn
+                </button>
+                <button id="cancel-action-btn" class="action-btn cancel-btn hidden">
+                    <i class="fas fa-times mr-2"></i>Cancel Action
+                </button>
+            </div>
+        </div>
+        
+        <!-- Floating Side Panel -->
+        <div id="side-panel" class="side-panel">
+            <!-- Controls Panel - Collapsible -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <h3>Game Controls</h3>
+                    <button class="panel-toggle" data-target="controls-body">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                </div>
+                <div id="controls-body" class="panel-body">
+                    <div id="action-info" class="text-sm mb-2">
+                        Right-click on units, buildings, or empty cells to see available actions
                     </div>
                 </div>
-
-                <!-- Game Controls & Info -->
-                <div class="col-span-3 space-y-4">
-                    <!-- Game Controls -->
-                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 border border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Game Controls</h3>
-                        <div id="action-info" class="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                            Right-click on units, buildings, or empty cells to see available actions
-                        </div>
-                        <button id="end-turn-btn"
-                            class="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 dark:bg-yellow-700 dark:hover:bg-yellow-800 text-white rounded-lg transition-colors duration-200 shadow">
-                            <i class="fas fa-flag-checkered mr-2"></i>End Turn
+            </div>
+            
+            <!-- Selection Info - Collapsible -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <h3>Selection</h3>
+                    <button class="panel-toggle" data-target="selection-body">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                </div>
+                <div id="selection-body" class="panel-body">
+                    <div id="selection-info" class="text-sm">
+                        No unit or building selected
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Players - Collapsible -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <h3>Players</h3>
+                    <button class="panel-toggle" data-target="players-body">
+                        <i class="fas fa-chevron-up"></i>
+                    </button>
+                </div>
+                <div id="players-body" class="panel-body">
+                    <ul id="player-list" class="space-y-1.5">
+                        {% for player in game.players %}
+                        <li class="flex items-center justify-between p-1.5 bg-gray-700 rounded">
+                            <span class="text-sm">{{ player_name }}</span>
+                            <span class="text-sm text-yellow-300">{{ player.resources }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Chat - Collapsible, Expandable -->
+            <div class="panel-card flex-1 min-h-[7rem]">
+                <div class="panel-header">
+                    <h3>Chat</h3>
+                    <div class="flex">
+                        <button class="panel-expand mr-1" data-target="chat-card">
+                            <i class="fas fa-expand-alt"></i>
                         </button>
-                        <button id="cancel-action-btn"
-                            class="w-full mt-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-800 text-white rounded-lg transition-colors duration-200 shadow hidden">
-                            <i class="fas fa-times mr-2"></i>Cancel Action
+                        <button class="panel-toggle" data-target="chat-body">
+                            <i class="fas fa-chevron-up"></i>
                         </button>
                     </div>
-
-                    <!-- Player List -->
-                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 border border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Players</h3>
-                        <ul id="player-list" class="space-y-2">
-                            {% for player in game.players %}
-                            <li class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <span class="text-sm">{{ player_name }}</span>
-                                <span class="text-sm text-yellow-500">{{ player.resources }}</span>
-                            </li>
-                            {% endfor %}
-                        </ul>
+                </div>
+                <div id="chat-body" class="panel-body flex-1 flex flex-col">
+                    <div id="chat-messages" class="flex-1 overflow-y-auto mb-2 text-sm space-y-1.5">
+                        {% for message in game.chat_messages %}
+                        <div class="flex p-1.5 bg-gray-700 rounded">
+                            <span class="font-medium text-blue-300 mr-1.5">{{ message.username }}:</span>
+                            <span>{{ message.message }}</span>
+                        </div>
+                        {% endfor %}
                     </div>
-
-                    <!-- Selected Unit/Building Info -->
-                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 border border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Selection Info</h3>
-                        <div id="selection-info" class="text-sm text-gray-600 dark:text-gray-300">
-                            No unit or building selected
-                        </div>
-                    </div>
-
-                    <!-- Chat Section -->
-                    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-4 border border-gray-200 dark:border-gray-700">
-                        <h3 class="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100">Chat</h3>
-                        <div id="chat-messages"
-                            class="h-48 overflow-y-auto mb-3 bg-gray-50 dark:bg-gray-900 rounded-lg p-2 text-sm">
-                            {% for message in game.chat_messages %}
-                            <div class="chat-message">
-                                <span class="username">{{ message.username }}:</span>
-                                <span class="message">{{ message.message }}</span>
-                            </div>
-                            {% endfor %}
-                        </div>
-                        <div class="flex space-x-2">
-                            <input type="text" id="chat-input"
-                                class="flex-1 px-3 py-2 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 text-gray-900 dark:text-gray-100"
-                                placeholder="Type your message...">
-                            <button id="send-chat-btn"
-                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800 text-white rounded-lg transition-colors duration-200 shadow hover:shadow-lg">
-                                <i class="fas fa-paper-plane"></i>
-                            </button>
-                        </div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="chat-input" class="flex-1 px-2 py-1.5 bg-gray-700 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm" placeholder="Type your message...">
+                        <button id="send-chat-btn" class="px-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Modals -->
     <!-- Building Selection Modal -->
     <div id="building-modal" class="modal">
         <div class="modal-content">
@@ -177,6 +211,56 @@
 </div>
 
 {% block scripts %}
+<!-- Panel functionality -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Toggle panel sections
+    const toggleButtons = document.querySelectorAll('.panel-toggle');
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const targetElement = document.getElementById(targetId);
+            
+            if (targetElement) {
+                targetElement.classList.toggle('hidden');
+                // Toggle icon
+                const icon = this.querySelector('i');
+                icon.classList.toggle('fa-chevron-up');
+                icon.classList.toggle('fa-chevron-down');
+            }
+        });
+    });
+    
+    // Toggle entire UI
+    const toggleUI = document.getElementById('toggle-ui-btn');
+    const sidePanel = document.getElementById('side-panel');
+    
+    if (toggleUI && sidePanel) {
+        toggleUI.addEventListener('click', function() {
+            sidePanel.classList.toggle('translate-x-full');
+            this.querySelector('i').classList.toggle('fa-columns');
+            this.querySelector('i').classList.toggle('fa-columns-3');
+        });
+    }
+    
+    // Expand chat panel
+    const expandButtons = document.querySelectorAll('.panel-expand');
+    expandButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetId = this.getAttribute('data-target');
+            const targetElement = document.getElementById(targetId);
+            
+            if (targetElement) {
+                targetElement.classList.toggle('expanded');
+                // Toggle icon
+                const icon = this.querySelector('i');
+                icon.classList.toggle('fa-expand-alt');
+                icon.classList.toggle('fa-compress-alt');
+            }
+        });
+    });
+});
+</script>
 <!-- Game initialization -->
 <script type="module" src="{% static 'js/init.js' %}"></script>
 {% endblock %}
