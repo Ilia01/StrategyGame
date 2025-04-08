@@ -4,4 +4,4 @@ from .action import (
     AttackActionSerializer,
     TrainActionSerializer
 )
-from .game import GameCreateSerializer, GameSerializer
+from .game import GameCreateSerializer, GameSerializer, PlayerSerializer

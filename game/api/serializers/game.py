@@ -37,9 +37,13 @@ class GameSerializer(serializers.ModelSerializer):
                  'current_player', 'players', 'units', 'buildings']
 
     def get_current_player(self, obj):
-        if obj.current_player:
-            return PlayerSerializer(obj.current_player).data
-        return None
+        if not obj.players.exists():
+            return None
+        try:
+            current_player = obj.players.all()[obj.current_player_index]
+            return PlayerSerializer(current_player).data
+        except IndexError:
+            return None
 
 class GameCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)

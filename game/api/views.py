@@ -5,11 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import UserRateThrottle
 from django.shortcuts import get_object_or_404
 from django.db.models import Prefetch
+from django.db import transaction
+import logging
 
 from game.core.models import Game, Player, Unit, Building
 from game.services.game_service import GameService
+from game.services.player_service import PlayerService
 from game.mixins import GameServiceMixin
-from .serializers import GameCreateSerializer, GameSerializer
+from .serializers import GameCreateSerializer, GameSerializer, PlayerSerializer
 from .serializers import (
     BuildActionSerializer,
     MoveActionSerializer,
@@ -25,11 +28,19 @@ from game.core.constants import (
 )
 from game.core.game_rules import GAME_RULES 
 
+logger = logging.getLogger(__name__)
+
 class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
     queryset = Game.objects.all()
     serializer_class = GameSerializer
     permission_classes = [IsAuthenticated]
     throttle_classes = [UserRateThrottle]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.game_service = GameService()
+        self.player_service = PlayerService()
+        self.game_service.player_service = self.player_service
 
     def get_queryset(self):
         return Game.objects.select_related(
@@ -49,74 +60,78 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         try:
             game = self.game_service.create_game(
                 user=request.user,
-                **serializer.validated_data
+                name=serializer.validated_data['name'],
+                map_size=serializer.validated_data['map_size'],
+                max_players=serializer.validated_data['max_players'],
+            ) 
+            logger.info(f"Game {game.name} created successfully by {request.user.username}"
             )
             return Response({
-                "game_id": game.id,
                 "message": "Game created successfully"
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            logger.error(f"Error creating game: {str(e)}", exc_info=True)
+            return Response({"error": "Error creating game"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def join(self, request, pk=None):
+        """Join a game"""
         game = self.get_object()
         try:
-            player = self.game_service.manage_player_in_game(request.user, game, 'add')
-            return Response({
-                "player_number": player.player_number,
-                "message": "Successfully joined the game"
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            player = self.game_service.add_player(game, request.user)
+            return Response(PlayerSerializer(player).data)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def leave(self, request, pk=None):
+        """Leave a game"""
+        game = self.get_object()
+        player = get_object_or_404(Player, user=request.user, game=game)
+        self.player_service.deactivate_player(player)
+        return Response({'status': 'success'})
+
+    @action(detail=True, methods=['post'])
+    def next_turn(self, request, pk=None):
+        """Advance to next turn"""
         game = self.get_object()
         try:
-            self.game_service.manage_player_in_game(request.user, game, 'remove')
-            return Response({
-                "message": "Successfully left the game"
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            self.game_service.next_turn(game)
+            return Response({'status': 'success'})
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def move_unit(self, request, pk=None):
+        """Move a unit to new coordinates"""
         game = self.get_object()
         player = get_object_or_404(Player, user=request.user, game=game)
+        
         unit_id = request.data.get('unit_id')
         x = request.data.get('x')
         y = request.data.get('y')
-
-        unit = get_object_or_404(Unit, id=unit_id, player=player)
-        if unit.moved:
-            return Response({"error": "Unit has already moved this turn"}, status=status.HTTP_400_BAD_REQUEST)
-
+        
         try:
-            self.game_service.move_unit(unit, x, y)
-            return Response({
-                "success": True,
-                "message": "Unit moved successfully"
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    
+            self.game_service.move_unit(game, player, unit_id, x, y)
+            return Response({'status': 'success'})
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     @action(detail=True, methods=['post'])
     def build_structure(self, request, pk=None):
+        """Build a structure at specified coordinates"""
         game = self.get_object()
         player = get_object_or_404(Player, user=request.user, game=game)
+        
         building_type = request.data.get('building_type')
         x = request.data.get('x')
         y = request.data.get('y')
-
+        
         try:
-            self.game_service.build_structure(player, building_type, x, y)
-            return Response({
-                "message": "Building created successfully"
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            building = self.game_service.build_structure(game, player, building_type, x, y)
+            return Response({'status': 'success', 'building_id': building.id})
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
     def train_unit(self, request, pk=None):
@@ -126,15 +141,14 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         unit_type = request.data.get('unit_type')
 
         building = get_object_or_404(Building, id=building_id, player=player)
-        if building.trained:
-            return Response({"error": "Building has already trained this turn"}, status=status.HTTP_400_BAD_REQUEST)
-
+        
         try:
-            self.game_service.train_unit(building, unit_type)
+            unit = self.game_service.train_unit(building, unit_type)
             return Response({
-                "message": "Unit trained successfully"
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
+                "message": "Unit trained successfully",
+                "unit_id": unit.id
+            })
+        except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'])
@@ -166,46 +180,30 @@ class GameViewSet(viewsets.ModelViewSet, GameServiceMixin):
         try:
             result = self.game_service.process_turn_actions(game, player, actions)
             return Response({
-                "success": True,
                 "message": "Turn completed successfully",
                 "result": result
-            }, status=status.HTTP_200_OK)
-        except ValueError as e:
+            })
+        except ValidationError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            logger.error(f"Server error during turn processing: {str(e)}", exc_info=True)
             return Response(
-                {"error": "Server error", "details": str(e)},
+                {"error": "Server error"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
     @action(detail=True, methods=['get'])
     def state(self, request, pk=None):
+        """Get current game state"""
         game = self.get_object()
+        current_player = self.game_service.get_current_player(game)
+        active_players = self.game_service.get_active_players(game)
+        
         return Response({
-            'id': game.id,
+            'game_id': game.id,
             'current_turn': game.current_turn,
-            'current_player': game.current_player.id if game.current_player else None,
-            'players': [{
-                'id': player.id,
-                'user': player.user.username,
-                'resources': player.resources,
-                'units': [{
-                    'id': unit.id,
-                    'type': unit.type,
-                    'x': unit.x,
-                    'y': unit.y,
-                    'health': unit.health,
-                    'level': unit.level
-                } for unit in player.units.all()],
-                'buildings': [{
-                    'id': building.id,
-                    'type': building.type,
-                    'x': building.x,
-                    'y': building.y,
-                    'health': building.health,
-                    'level': building.level
-                } for building in player.buildings.all()]
-            } for player in game.players.all()],
+            'current_player': PlayerSerializer(current_player).data if current_player else None,
+            'players': PlayerSerializer(active_players, many=True).data,
             'map_data': game.map_data
         })
 
